@@ -3,11 +3,10 @@ import torch.nn as nn
 from util import spectral_radius as _spectral_radius
 
 class ESN(nn.Module):
-    def __init__(self, W_in, W_res, W_out, spectral_radius, f, washout, readout):
+    def __init__(self, W_in, W_res, readout, spectral_radius, f, washout):
         super(ESN, self).__init__()
         self.W_in = W_in
         self.W_res = W_res
-        self.W_out = W_out
         self.spectral_radius = spectral_radius
         self.f = f
         self.washout = washout
@@ -31,8 +30,7 @@ class ESN(nn.Module):
         X = X[self.washout:]
         y = y[self.washout:] if y is not None else None
 
-        if y is not None:
-            self.readout.fit(X, y)
-        else:
-            return self.readout.predict(X)
+        y_pred = self.readout(X, y)
 
+        return y_pred
+    
