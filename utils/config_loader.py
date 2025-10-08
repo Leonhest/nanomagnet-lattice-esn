@@ -12,7 +12,8 @@ class ConfigLoader():
         with open(config_path, "r") as f:
             self.conf = yaml.safe_load(f)
 
-        self._init_matrix()
+        self._init_w_in()
+        self._init_w_res()
         self._init_readout()
         self._init_f()
         self._get_data()
@@ -54,6 +55,12 @@ class ConfigLoader():
                 self.conf["esn"]["readout"] = Ridge(**self.conf["esn"]["readout"]["args"])
             case _:
                 raise ValueError("Readout not found")
+
+    def _init_w_in(self):
+        pass
+
+    def _init_w_res(self):
+        pass
 
     def _init_esn(self):
         self.conf["esn"]["model"] = ESN(

@@ -2,7 +2,7 @@ data:
   name: NARMA
   load: False
   system_order: 10
-  sample_len: 1000
+  sample_len: 2000
   split_ratio: 0.8
 esn:
   spectral_radius: 0.9
@@ -10,9 +10,16 @@ esn:
     name: tanh
     args:
       beta: 1.0
-  washout: 10
+  washout: 200
   readout:
     name: Ridge
     args:
       alpha: 1.0
+  W_mat:
+    size: 225
+    W_in:
+      args:
+    W_res:
+      args:
+        
 

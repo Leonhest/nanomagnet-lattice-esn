@@ -6,21 +6,20 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def train(train_data, model, params):
+def train(train_data, model):
     pass
 
-def test(test_data, model, params):
+def test(test_data, model):
     pass
 
 
 def run(config):
 
-    train_data, test_data = config.data
-    params = config.params
-    model = ESN(params)
+    train_data, test_data = config.dataset
+    model = config.esn.model
 
-    train(train_data, model, params)
-    test(test_data, model, params)
+    train(train_data, model)
+    test(test_data, model)
 
 
 if __name__ == "__main__":
