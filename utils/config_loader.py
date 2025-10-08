@@ -1,5 +1,6 @@
 import yaml
 import os
+from data.NARMA10 import NARMA10
 
 
 class ConfigLoader():
@@ -25,3 +26,13 @@ class ConfigLoader():
                     return os.path.join(root, file)
         
         raise ValueError("Config file was not found in provided experiment folder")
+
+    def _get_data(self):
+        name = self.conf["data"]["name"]
+        match name:
+            case "NARMA":
+                self.conf["dataset"] = NARMA10(self.conf["data"])
+            case "Lorenz":
+                pass
+            case _:
+                raise ValueError("Dataset not found")

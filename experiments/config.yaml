@@ -1,0 +1,6 @@
+data:
+  name: NARMA
+  load: False
+  system_order: 10
+  sample_len: 1000
+  split_ratio: 0.8

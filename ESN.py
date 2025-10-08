@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from util import spectral_radius as _spectral_radius
+from utils.formula import spectral_radius as _spectral_radius
 
 class ESN(nn.Module):
     def __init__(self, W_in, W_res, readout, spectral_radius, f, washout):
