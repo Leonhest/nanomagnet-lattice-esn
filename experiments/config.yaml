@@ -2,8 +2,8 @@ data:
   name: NARMA
   load: False
   system_order: 10
-  sample_len: 2000
-  split_ratio: 0.8
+  sample_len: 5000
+  split_ratio: 0.4
 esn:
   spectral_radius: 0.9
   f: 
@@ -14,13 +14,12 @@ esn:
   readout:
     name: Ridge
     args:
-      alpha: 1.0
+      alpha: 0.0
   W_args:
     size: 225
-    W_in:
-      args:
+    W_in_args:
       input_scale: 1
-    W_res:
-      args:
+      distribution: uniform
+    W_res_args:
         
 

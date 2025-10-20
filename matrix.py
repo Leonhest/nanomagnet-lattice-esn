@@ -19,7 +19,14 @@ class Matrix:
         self.W_res = self._init_W_res()
 
     def _init_W_in(self):
-        W_in = torch.ones(self.size)
+        match self.W_in_args["distribution"]:
+            case "uniform":
+                W_in = torch.rand(self.size) - 0.5
+            case "fixed":
+                W_in = torch.ones(self.size)
+            case _:
+                raise ValueError("Invalid distribution")
+
         W_in *= self.W_in_args["input_scale"]
         return W_in
 
@@ -51,6 +58,6 @@ class Matrix:
         return G
 
 if __name__ == "__main__":
-    matrix = Matrix({"size": 81, "W_in_args": {"input_scale": 1}, "W_res_args": {}})
+    matrix = Matrix({"size": 25, "W_in_args": {"input_scale": 1, "distribution": "uniform"}, "W_res_args": {}})
     nx.draw(matrix.G_res, pos=nx.spring_layout(matrix.G_res), with_labels=True)
     plt.show()

@@ -15,19 +15,18 @@ class ESN(nn.Module):
         if _spectral_radius(self.W.W_res) != 0:
                 self.W.W_res *= self.spectral_radius / _spectral_radius(self.W.W_res)
 
-    def forward(self, u, y):
-        len_timeseries = len(u)
+    def forward(self, u, y=None):
+        len_timeseries = u.size()[0]
         X = torch.zeros(len_timeseries, self.hidden_nodes)
         x = torch.zeros(self.hidden_nodes)
 
         for t in range(len_timeseries):
-            x = self.f(self.W.W_res @ x + self.W.W_in @ u[t])
+            x = self.f(self.W.W_in * u[t] + self.W.W_res.mv(x))
             X[t] = x
 
         self.X = X
-
         X = X[self.washout:]
-        y = y[self.washout:] if y is not None else None
+        y = y[self.washout:] if y is not None else y
 
         y_pred = self.readout(X, y)
 

@@ -2,6 +2,7 @@ import torch
 import numpy as np
 
 
+
 class NARMA10():
 
     def __init__(self, conf):
@@ -14,10 +15,10 @@ class NARMA10():
             self._generate_data()
 
     def _load_data(self):
-        self.u_train = torch.FloatTensor(np.load('data/dataset/NARMA10/u_train.npy'))
-        self.y_train = torch.FloatTensor(np.load('data/dataset/NARMA10/y_train.npy'))
-        self.u_test = torch.FloatTensor(np.load('data/dataset/NARMA10/u_test.npy'))
-        self.y_test = torch.FloatTensor(np.load('data/dataset/NARMA10/y_test.npy'))
+        self.u_train = torch.FloatTensor(np.load('data/datasets/NARMA10/u_train.npy'))
+        self.y_train = torch.FloatTensor(np.load('data/datasets/NARMA10/y_train.npy'))
+        self.u_test = torch.FloatTensor(np.load('data/datasets/NARMA10/u_test.npy'))
+        self.y_test = torch.FloatTensor(np.load('data/datasets/NARMA10/y_test.npy'))
 
     def _generate_data(self):
         n = self.conf["system_order"]
@@ -70,7 +71,7 @@ class NARMA10():
         return u_train, y_train, u_test, y_test
 
     def save_data(self, u_train, y_train, u_test, y_test):
-        np.save('data/dataset/NARMA10/u_train.npy', u_train)
-        np.save('data/dataset/NARMA10/y_train.npy', y_train)
-        np.save('data/dataset/NARMA10/u_test.npy', u_test)
-        np.save('data/dataset/NARMA10/y_test.npy', y_test)
+        np.save('data/datasets/NARMA10/u_train.npy', u_train)
+        np.save('data/datasets/NARMA10/y_train.npy', y_train)
+        np.save('data/datasets/NARMA10/u_test.npy', u_test)
+        np.save('data/datasets/NARMA10/y_test.npy', y_test)
