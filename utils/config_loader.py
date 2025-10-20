@@ -4,6 +4,7 @@ from data.NARMA10 import NARMA10
 from readout import Ridge
 from activation import Tanh
 from ESN import ESN
+from matrix import Matrix
 
 class ConfigLoader():
     def __init__(self, exp_path):
@@ -12,8 +13,7 @@ class ConfigLoader():
         with open(config_path, "r") as f:
             self.conf = yaml.safe_load(f)
 
-        self._init_w_in()
-        self._init_w_res()
+        self._init_W()
         self._init_readout()
         self._init_f()
         self._get_data()
@@ -56,16 +56,12 @@ class ConfigLoader():
             case _:
                 raise ValueError("Readout not found")
 
-    def _init_w_in(self):
-        pass
-
-    def _init_w_res(self):
-        pass
+    def _init_W(self):
+        self.conf["esn"]["W"] = Matrix(self.conf["esn"]["W_args"])
 
     def _init_esn(self):
         self.conf["esn"]["model"] = ESN(
-            W_in=self.conf["esn"]["W_in"],
-            W_res=self.conf["esn"]["W_res"],
+            W=self.conf["esn"]["W"],
             spectral_radius=self.conf["esn"]["spectral_radius"],
             f=self.conf["esn"]["f"],
             washout=self.conf["esn"]["washout"],

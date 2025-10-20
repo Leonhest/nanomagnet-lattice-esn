@@ -15,10 +15,11 @@ esn:
     name: Ridge
     args:
       alpha: 1.0
-  W_mat:
+  W_args:
     size: 225
     W_in:
       args:
+      input_scale: 1
     W_res:
       args:
         
