@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 
@@ -75,3 +76,21 @@ class NARMA10():
         np.save('data/datasets/NARMA10/y_train.npy', y_train)
         np.save('data/datasets/NARMA10/u_test.npy', u_test)
         np.save('data/datasets/NARMA10/y_test.npy', y_test)
+
+
+if __name__ == "__main__":
+    # load data from file
+    u_train = np.load('datasets/NARMA10/u_train.npy')
+    y_train = np.load('datasets/NARMA10/y_train.npy')
+    u_test = np.load('datasets/NARMA10/u_test.npy')
+    y_test = np.load('datasets/NARMA10/y_test.npy')
+
+    # plot distribution of u_train and y_train
+    plt.hist(u_train, bins=100)
+    plt.show()
+    plt.hist(y_train, bins=100)
+    plt.show()
+    plt.hist(u_test, bins=100)
+    plt.show()
+    plt.hist(y_test, bins=100)
+    plt.show()

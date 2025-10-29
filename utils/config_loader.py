@@ -65,5 +65,5 @@ class ConfigLoader():
             spectral_radius=self.conf["esn"]["spectral_radius"],
             f=self.conf["esn"]["f"],
             washout=self.conf["esn"]["washout"],
-            readout=self.conf["esn"]["readout"]
+            readout=self.conf["esn"]["readout"],
         )

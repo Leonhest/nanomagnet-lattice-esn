@@ -2,7 +2,7 @@ from utils.config_loader import ConfigLoader
 from ESN import ESN
 from metric import nrmse
 import os
-
+import matplotlib.pyplot as plt
 import logging
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,9 @@ def train(u_train, y_train, model):
     y_train = y_train[model.washout:]
     nrmse_value = nrmse(y_pred_train, y_train)
     logger.info(f"NRMSE train: {nrmse_value}")
-
+    print(model.X)
+    #plt.hist(model.X, bins=100)
+    #plt.show()
 
 def test(u_test, y_test, model):
     y_pred_test = model.forward(u_test)
@@ -23,7 +25,7 @@ def test(u_test, y_test, model):
 def run(config):
     dataset = config["dataset"]
     model = config["esn"]["model"]
-    print(model.W.W_res)
+    #print(model.W.W_res)
 
     train(dataset.u_train, dataset.y_train, model)
     test(dataset.u_test, dataset.y_test, model)
