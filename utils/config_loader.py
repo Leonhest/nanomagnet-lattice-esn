@@ -29,11 +29,16 @@ class ConfigLoader():
         with open(config_path, "r") as f:
             base_config = yaml.safe_load(f)
         
+        # Get num_runs from config
+        num_runs = base_config.get("num_runs", 1)
+        
         # Find all list parameters
         list_params = ConfigLoader._find_list_parameters(base_config)
         
         if not list_params:
-            return [ConfigLoader(exp_path, base_config)], []
+            # Generate num_runs copies of the single config
+            configs = [ConfigLoader(exp_path, copy.deepcopy(base_config)) for _ in range(num_runs)]
+            return configs, []
         
         # Generate all combinations
         param_names = list(list_params.keys())
@@ -45,7 +50,9 @@ class ConfigLoader():
             config = copy.deepcopy(base_config)
             for param_name, param_value in zip(param_names, combo):
                 ConfigLoader._set_nested_value(config, param_name, param_value)
-            configs.append(ConfigLoader(exp_path, config))
+            # Generate num_runs copies of this config (each with different random initialization)
+            for _ in range(num_runs):
+                configs.append(ConfigLoader(exp_path, copy.deepcopy(config)))
         
         return configs, param_names
     

@@ -4,6 +4,7 @@ from ESN import ESN
 from metric import nrmse
 import os
 import logging
+import numpy as np
 logger = logging.getLogger(__name__)
 
 
@@ -42,13 +43,16 @@ if __name__ == "__main__":
     )
 
     # Generate all configs (automatically detects arrays and creates grid search)
+    # Each config combination will be repeated num_runs times
     configs, param_names = ConfigLoader.generate_grid_search_configs(exp_path)
+    
+    num_runs = configs[0].conf.get("num_runs", 1) if configs else 1
+    num_unique_configs = len(configs) // num_runs if num_runs > 0 else len(configs)
+    logger.info(f"Found {num_unique_configs} unique config(s), running each {num_runs} time(s) = {len(configs)} total runs")
 
-    logger.info(f"Found {len(configs)} config(s) to run")
-
-    # Collect (param_values_tuple, nrmse) results
-    results = []
-
+    # Collect (param_values_tuple, nrmse) results - group by unique config and average
+    config_results = {}
+    
     # Run each config
     for i, config in enumerate(configs):
         logger.info(f"Running config {i+1}/{len(configs)}")
@@ -63,7 +67,19 @@ if __name__ == "__main__":
                 cur = cur[k]
             # if list in base config, current should now be a scalar value for this specific config
             param_values_tuple.append(cur)
-        results.append((tuple(param_values_tuple), float(test_nrmse)))
+        
+        key = tuple(param_values_tuple)
+        if key not in config_results:
+            config_results[key] = []
+        config_results[key].append(float(test_nrmse))
+    
+    # Average the results for each unique config
+    results = []
+    for key, nrmse_values in config_results.items():
+        avg_nrmse = np.mean(nrmse_values)
+        std_nrmse = np.std(nrmse_values)
+        logger.info(f"Config {key} - Average NRMSE: {avg_nrmse:.6f} ± {std_nrmse:.6f}")
+        results.append((key, float(avg_nrmse)))
 
     # Plot results if any varied parameters exist
     if param_names:

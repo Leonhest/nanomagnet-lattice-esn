@@ -18,7 +18,7 @@ class ESN(nn.Module):
     def forward(self, u, y=None):
         len_timeseries = u.size()[0]
         X = torch.zeros(len_timeseries, self.hidden_nodes)
-        x = torch.randn(self.hidden_nodes)
+        x = torch.zeros(self.hidden_nodes)
         
 
         for t in range(len_timeseries):
