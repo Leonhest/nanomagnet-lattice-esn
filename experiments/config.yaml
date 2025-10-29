@@ -1,3 +1,4 @@
+gridsearch: True
 data:
   name: NARMA
   load: True
@@ -22,7 +23,7 @@ esn:
       input_scale: 0.1
       distribution: fixed
     W_res_args:
-      self_connection: 0.2
+      self_connection: [0.0, 0.2]
       directed: 0.8
       sign_frac: 0.5
 

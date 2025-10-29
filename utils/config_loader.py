@@ -1,5 +1,7 @@
 import yaml
 import os
+import copy
+from itertools import product
 from data.NARMA10 import NARMA10
 from readout import Ridge
 from activation import Tanh
@@ -7,17 +9,76 @@ from ESN import ESN
 from matrix import Matrix
 
 class ConfigLoader():
-    def __init__(self, exp_path):
-        config_path = self._find_conf(exp_path)
-
-        with open(config_path, "r") as f:
-            self.conf = yaml.safe_load(f)
+    def __init__(self, exp_path, config_dict=None):
+        if config_dict is None:
+            config_path = self._find_conf(exp_path)
+            with open(config_path, "r") as f:
+                self.conf = yaml.safe_load(f)
+        else:
+            self.conf = config_dict
 
         self._init_W()
         self._init_readout()
         self._init_f()
         self._get_data()
         self._init_esn()
+    
+    @staticmethod
+    def generate_grid_search_configs(exp_path):
+        config_path = ConfigLoader._find_conf_static(exp_path)
+        with open(config_path, "r") as f:
+            base_config = yaml.safe_load(f)
+        
+        # Find all list parameters
+        list_params = ConfigLoader._find_list_parameters(base_config)
+        
+        if not list_params:
+            return [ConfigLoader(exp_path, base_config)]
+        
+        # Generate all combinations
+        param_names = list(list_params.keys())
+        param_values = list(list_params.values())
+        combinations = list(product(*param_values))
+        
+        configs = []
+        for combo in combinations:
+            config = copy.deepcopy(base_config)
+            for param_name, param_value in zip(param_names, combo):
+                ConfigLoader._set_nested_value(config, param_name, param_value)
+            configs.append(ConfigLoader(exp_path, config))
+        
+        return configs
+    
+    @staticmethod
+    def _find_conf_static(exp_path):
+        for root, _, files in os.walk(exp_path):
+            for file in files:
+                if "config.yaml" in file:
+                    return os.path.join(root, file)
+        raise ValueError("Config file was not found in provided experiment folder")
+    
+    @staticmethod
+    def _find_list_parameters(config, prefix="", result=None):
+        if result is None:
+            result = {}
+        
+        for key, value in config.items():
+            current_path = f"{prefix}.{key}" if prefix else key
+            
+            if isinstance(value, list):
+                result[current_path] = value
+            elif isinstance(value, dict):
+                ConfigLoader._find_list_parameters(value, current_path, result)
+        
+        return result
+    
+    @staticmethod
+    def _set_nested_value(config, path, value):
+        keys = path.split(".")
+        current = config
+        for key in keys[:-1]:
+            current = current[key]
+        current[keys[-1]] = value
 
 
 

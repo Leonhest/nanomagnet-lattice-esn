@@ -33,8 +33,7 @@ def run(config):
 
 if __name__ == "__main__":
     exp_path = "./experiments"
-    config = ConfigLoader(exp_path)
-
+    
     logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s %(levelname)s:%(message)s',
@@ -44,4 +43,12 @@ if __name__ == "__main__":
             ]
     )
 
-    run(config.conf)
+    # Generate all configs (automatically detects arrays and creates grid search)
+    configs = ConfigLoader.generate_grid_search_configs(exp_path)
+    
+    logger.info(f"Found {len(configs)} config(s) to run")
+    
+    # Run each config
+    for i, config in enumerate(configs):
+        logger.info(f"Running config {i+1}/{len(configs)}")
+        run(config.conf)
