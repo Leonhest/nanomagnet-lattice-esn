@@ -74,8 +74,25 @@ def plot_gridsearch_results(param_names, results):
             title_text = 'Grid Search (>3 params) projected to first 3 (color = NRMSE)'
 
     # --- Create and save the plot ---
+    # Build hover template to include NR MSE explicitly
+    if num_params == 2:
+        hovertemplate = (
+            f"{display_names[0]}: %{{x}}<br>"
+            f"{display_names[1]}: %{{y}}<br>"
+            "NRMSE: %{z:.4f}<extra></extra>"
+        )
+    else:
+        hovertemplate = (
+            f"{display_names[0]}: %{{x}}<br>"
+            f"{display_names[1]}: %{{y}}<br>"
+            f"{display_names[2]}: %{{z}}<br>"
+            "NRMSE: %{customdata:.4f}<extra></extra>"
+        )
+
     fig = go.Figure(data=[go.Scatter3d(
         x=x, y=y, z=z, mode='markers',
+        customdata=c,
+        hovertemplate=hovertemplate,
         marker=dict(
             size=5,
             color=c,
