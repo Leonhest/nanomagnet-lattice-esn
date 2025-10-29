@@ -1,4 +1,3 @@
-gridsearch: True
 data:
   name: NARMA
   load: True
@@ -11,7 +10,7 @@ esn:
     name: tanh
     args:
       beta: 1.0
-      shift: 0.25
+      shift: 0.0
   washout: 200
   readout:
     name: Ridge

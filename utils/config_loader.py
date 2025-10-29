@@ -33,7 +33,7 @@ class ConfigLoader():
         list_params = ConfigLoader._find_list_parameters(base_config)
         
         if not list_params:
-            return [ConfigLoader(exp_path, base_config)]
+            return [ConfigLoader(exp_path, base_config)], []
         
         # Generate all combinations
         param_names = list(list_params.keys())
@@ -47,7 +47,7 @@ class ConfigLoader():
                 ConfigLoader._set_nested_value(config, param_name, param_value)
             configs.append(ConfigLoader(exp_path, config))
         
-        return configs
+        return configs, param_names
     
     @staticmethod
     def _find_conf_static(exp_path):
