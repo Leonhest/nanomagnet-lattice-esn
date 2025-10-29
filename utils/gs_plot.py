@@ -36,7 +36,12 @@ def plot_gridsearch_results(param_names, results):
         plt.title('Grid Search Performance')
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
-        plt.show()
+        
+        # Generate a descriptive filename and save the plot
+        filename = f"experiments/plot_{display_names[0]}.png"
+        plt.savefig(filename)
+        print(f"Plot saved to {filename}")
+        plt.close() # Close the figure to prevent showing it interactively
         return
 
     # --- Common setup for all 3D plotly plots (num_params >= 2) ---

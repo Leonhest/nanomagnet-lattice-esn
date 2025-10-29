@@ -2,4 +2,6 @@
 **/__pycache__/**
 .DS_Store
 **/data/datasets/**
-run.log
+experiments/run.log
+experiments/plot_*.html
+experiments/plot_*.png
