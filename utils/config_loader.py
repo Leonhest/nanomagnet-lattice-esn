@@ -1,3 +1,4 @@
+from re import L
 import yaml
 import os
 import copy
@@ -53,7 +54,7 @@ class ConfigLoader():
             # Generate num_runs copies of this config (each with different random initialization)
             for _ in range(num_runs):
                 configs.append(ConfigLoader(exp_path, copy.deepcopy(config)))
-        
+                
         return configs, param_names
     
     @staticmethod
@@ -112,7 +113,7 @@ class ConfigLoader():
         name = self.conf["esn"]["f"]["name"]
         match name:
             case "tanh":
-                self.conf["esn"]["f"] = Tanh(**self.conf["esn"]["f"]["args"])
+                self.conf["esn"]["f"]["module"] = Tanh(**self.conf["esn"]["f"]["args"])
             case _:
                 raise ValueError("F not found")
 
@@ -131,7 +132,7 @@ class ConfigLoader():
         self.conf["esn"]["model"] = ESN(
             W=self.conf["esn"]["W"],
             spectral_radius=self.conf["esn"]["spectral_radius"],
-            f=self.conf["esn"]["f"],
+            f=self.conf["esn"]["f"]["module"],
             washout=self.conf["esn"]["washout"],
             readout=self.conf["esn"]["readout"],
         )

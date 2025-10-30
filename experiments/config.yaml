@@ -11,19 +11,19 @@ esn:
     name: tanh
     args:
       beta: 1.0
-      shift: 0.0
+      shift: 0.15
   washout: 200
   readout:
     name: Ridge
     args:
       alpha: 0.0
   W_args:
-    size: 225
+    size: 400
     W_in_args:
       input_scale: 0.1
       distribution: fixed
     W_res_args:
-      self_connection: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      self_connection: 0.0
       directed: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
       sign_frac: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 

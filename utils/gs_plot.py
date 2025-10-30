@@ -89,20 +89,72 @@ def plot_gridsearch_results(param_names, results):
             "NRMSE: %{customdata:.4f}<extra></extra>"
         )
 
-    fig = go.Figure(data=[go.Scatter3d(
-        x=x, y=y, z=z, mode='markers',
-        customdata=c,
-        hovertemplate=hovertemplate,
-        marker=dict(
-            size=5,
-            color=c,
-            colorscale=custom_colorscale,
-            cmin=nrmse_min,
-            cmax=nrmse_max,
-            colorbar=dict(title='NRMSE', len=0.6, x=-0.15),
-            opacity=0.8
-        )
-    )])
+    # Build figure
+    fig = go.Figure()
+
+    if num_params == 2:
+        # Try to form a regular grid to draw a surface/plane
+        x_unique = np.unique(x)
+        y_unique = np.unique(y)
+
+        # Map (x,y) -> z and populate Z grid
+        z_grid = np.full((y_unique.size, x_unique.size), np.nan, dtype=float)
+        index_map = {(float(xv), float(yv)): zv for xv, yv, zv in zip(x, y, z)}
+        for j, yv in enumerate(y_unique):
+            for i, xv in enumerate(x_unique):
+                if (float(xv), float(yv)) in index_map:
+                    z_grid[j, i] = index_map[(float(xv), float(yv))]
+
+        # Add surface if we have at least a 2x2 grid with some valid values
+        if x_unique.size >= 2 and y_unique.size >= 2 and np.isfinite(z_grid).sum() >= 4:
+            fig.add_trace(go.Surface(
+                x=x_unique,
+                y=y_unique,
+                z=z_grid,
+                colorscale=custom_colorscale,
+                cmin=nrmse_min,
+                cmax=nrmse_max,
+                colorbar=dict(title='NRMSE', len=0.6, x=-0.15),
+                showscale=True,
+                opacity=0.8,
+                hovertemplate=(
+                    f"{display_names[0]}: %{{x}}<br>"
+                    f"{display_names[1]}: %{{y}}<br>"
+                    "NRMSE: %{z:.4f}<extra></extra>"
+                )
+            ))
+
+        # Overlay scatter markers for exact evaluated points
+        fig.add_trace(go.Scatter3d(
+            x=x, y=y, z=z, mode='markers',
+            customdata=c,
+            hovertemplate=hovertemplate,
+            marker=dict(
+                size=4,
+                color=c,
+                colorscale=custom_colorscale,
+                cmin=nrmse_min,
+                cmax=nrmse_max,
+                opacity=0.9
+            ),
+            showlegend=False
+        ))
+    else:
+        # For >=3 params keep scatter3d
+        fig.add_trace(go.Scatter3d(
+            x=x, y=y, z=z, mode='markers',
+            customdata=c,
+            hovertemplate=hovertemplate,
+            marker=dict(
+                size=5,
+                color=c,
+                colorscale=custom_colorscale,
+                cmin=nrmse_min,
+                cmax=nrmse_max,
+                colorbar=dict(title='NRMSE', len=0.6, x=-0.15),
+                opacity=0.8
+            )
+        ))
     fig.update_layout(
         title_text=title_text,
         scene=scene,
