@@ -54,7 +54,7 @@ class ConfigLoader():
             # Generate num_runs copies of this config (each with different random initialization)
             for _ in range(num_runs):
                 configs.append(ConfigLoader(exp_path, copy.deepcopy(config)))
-                
+        
         return configs, param_names
     
     @staticmethod

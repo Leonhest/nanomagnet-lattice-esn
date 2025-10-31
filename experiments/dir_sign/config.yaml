@@ -1,0 +1,29 @@
+num_runs: 10
+data:
+  name: NARMA
+  load: True
+  system_order: 10
+  sample_len: 5000
+  split_ratio: 0.25
+esn:
+  spectral_radius: 0.9
+  f: 
+    name: tanh
+    args:
+      beta: 1.0
+      shift: 0.15
+  washout: 200
+  readout:
+    name: Ridge
+    args:
+      alpha: 0.0
+  W_args:
+    size: 400
+    W_in_args:
+      input_scale: 0.1
+      distribution: fixed
+    W_res_args:
+      self_connection: 0.0
+      directed: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      sign_frac: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+

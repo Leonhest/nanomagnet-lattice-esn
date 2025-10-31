@@ -3,5 +3,3 @@
 .DS_Store
 **/data/datasets/**
 experiments/run.log
-experiments/plot_*.html
-experiments/plot_*.png

@@ -3,7 +3,7 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 
-def plot_gridsearch_results(param_names, results):
+def plot_gridsearch_results(param_names, results, exp_path):
     """
     Plot grid search results.
     """
@@ -38,7 +38,7 @@ def plot_gridsearch_results(param_names, results):
         plt.tight_layout()
         
         # Generate a descriptive filename and save the plot
-        filename = f"experiments/plot_{display_names[0]}.png"
+        filename = f"{exp_path}/plot_{display_names[0]}.png"
         plt.savefig(filename)
         print(f"Plot saved to {filename}")
         plt.close() # Close the figure to prevent showing it interactively
@@ -163,7 +163,7 @@ def plot_gridsearch_results(param_names, results):
 
     # Generate a descriptive filename
     param_str = "_vs_".join(display_names)
-    filename = f"experiments/plot_{param_str}.html"
+    filename = f"{exp_path}/plot_{param_str}.html"
 
     fig.write_html(filename)
     print(f"Interactive figure saved to {filename}")

@@ -32,7 +32,7 @@ def run(config):
 
 
 if __name__ == "__main__":
-    exp_path = "./experiments"
+    exp_path = "./experiments/self_shift"
     
     logging.basicConfig(
             level=logging.INFO,
@@ -108,4 +108,4 @@ if __name__ == "__main__":
 
     # Plot results if any varied parameters exist
     if param_names:
-        plot_gridsearch_results(param_names, results)
+        plot_gridsearch_results(param_names, results, exp_path)
