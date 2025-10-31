@@ -35,8 +35,9 @@ class Matrix:
         m = int(sqrt(self.size))
         n = int(sqrt(self.size))
         self.G_res = self.rectangular(m, n)
-        self.G_res = self._make_graph_directed(self.G_res, self.W_res_args["directed"])
         self.G_res = self._make_weights_negative(self.G_res, self.W_res_args["sign_frac"])
+
+        self.G_res = self._make_graph_directed(self.G_res, self.W_res_args["directed"])
         self._self_connection(self.G_res)
         W_res = nx.to_numpy_array(self.G_res)
         return torch.FloatTensor(W_res)
