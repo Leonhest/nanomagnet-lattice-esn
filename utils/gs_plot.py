@@ -3,22 +3,80 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 
-def plot_gridsearch_results(param_names, results, exp_path):
+def plot_gridsearch_results(param_names, results, exp_path, res_metrics_mode=False, metrics_results=None):
     """
     Plot grid search results.
     """
     if not results:
         return
 
-    # Filter out results with NRMSE > 0.8
-    results = [(pv, score) for pv, score in results if score <= 0.8]
-    
-    if not results:
-        print("No results with NRMSE <= 0.8 to plot")
-        return
-
     display_names = [name.split('.')[-1] for name in param_names]
     num_params = len(param_names)
+    
+    # Handle res_metrics mode with 1 parameter - create two 2D plots
+    if res_metrics_mode and num_params == 1 and metrics_results:
+        # First plot: kernel_quality and generalization
+        kq_results = metrics_results["kernel_quality"]
+        gen_results = metrics_results["generalization"]
+        
+        # Extract x and y values
+        x_kq = np.array([list(pv)[0] for pv, _ in kq_results], dtype=float)
+        y_kq = np.array([score for _, score in kq_results], dtype=float)
+        x_gen = np.array([list(pv)[0] for pv, _ in gen_results], dtype=float)
+        y_gen = np.array([score for _, score in gen_results], dtype=float)
+        
+        # Sort by x values
+        order_kq = np.argsort(x_kq)
+        x_kq, y_kq = x_kq[order_kq], y_kq[order_kq]
+        order_gen = np.argsort(x_gen)
+        x_gen, y_gen = x_gen[order_gen], y_gen[order_gen]
+        
+        # Create first plot with both lines
+        plt.figure()
+        plt.plot(x_kq, y_kq, marker='o', label='Kernel Quality', linewidth=2)
+        plt.plot(x_gen, y_gen, marker='s', label='Generalization', linewidth=2)
+        plt.xlabel(display_names[0])
+        plt.ylabel('Score')
+        plt.title('Kernel Quality vs Generalization')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        
+        filename1 = f"{exp_path}/plot_{display_names[0]}_kq_gen.png"
+        plt.savefig(filename1)
+        print(f"Plot saved to {filename1}")
+        plt.close()
+        
+        # Second plot: memory_capacity
+        mc_results = metrics_results["memory_capacity"]
+        x_mc = np.array([list(pv)[0] for pv, _ in mc_results], dtype=float)
+        y_mc = np.array([score for _, score in mc_results], dtype=float)
+        
+        order_mc = np.argsort(x_mc)
+        x_mc, y_mc = x_mc[order_mc], y_mc[order_mc]
+        
+        plt.figure()
+        plt.plot(x_mc, y_mc, marker='o', linewidth=2)
+        plt.xlabel(display_names[0])
+        plt.ylabel('Memory Capacity')
+        plt.title('Memory Capacity')
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        
+        filename2 = f"{exp_path}/plot_{display_names[0]}_memory_capacity.png"
+        plt.savefig(filename2)
+        print(f"Plot saved to {filename2}")
+        plt.close()
+        return
+    
+    # Filter out results with NRMSE > 0.8 (only for normal mode)
+    if not res_metrics_mode:
+        results = [(pv, score) for pv, score in results if score <= 0.8]
+        
+        if not results:
+            print("No results with NRMSE <= 0.8 to plot")
+            return
+
     params_array = np.array([list(pv) for pv, _ in results], dtype=float)
     nrmse_array = np.array([score for _, score in results], dtype=float)
     
