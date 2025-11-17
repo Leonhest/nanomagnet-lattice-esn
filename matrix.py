@@ -86,7 +86,7 @@ class Matrix:
         return G
 
 if __name__ == "__main__":
-    matrix = Matrix({"size": 25, "W_in_args": {"input_scale": 1, "distribution": "uniform"}, "W_res_args": {"self_connection": 0.0, "directed": 1.0, "sign_frac": 0.5}})
+    matrix = Matrix({"size": 16, "W_in_args": {"input_scale": 1, "distribution": "uniform"}, "W_res_args": {"self_connection": 1.0, "directed": 0.0, "sign_frac": 0.0}})
     nx.draw(matrix.G_res, pos=nx.spring_layout(matrix.G_res), with_labels=True)
     plt.show()
     print(matrix.W_res)

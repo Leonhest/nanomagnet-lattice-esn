@@ -3,8 +3,10 @@ from utils.gs_plot import plot_gridsearch_results
 from ESN import ESN
 from metric import nrmse, kernel_quality, generalization, memory_capacity
 import os
+import json
 import logging
 import numpy as np
+import torch
 import gc
 logger = logging.getLogger(__name__)
 
@@ -23,12 +25,37 @@ def test(u_test, y_test, model):
     logger.info(f"NRMSE test: {nrmse_value}")
     return float(nrmse_value)
 
-def run(config):
+def _compute_reservoir_statistics(model):
+    if not hasattr(model, "X"):
+        raise RuntimeError("Reservoir states not available; run a forward pass first.")
+    states = model.X.detach()
+    node_means = torch.mean(states, dim=0)
+    node_variances = torch.var(states, dim=0, unbiased=False)
+    avg_node_mean = torch.mean(node_means).item()
+    avg_node_variance = torch.mean(node_variances).item()
+    mean_spread = torch.std(node_means, unbiased=False).item()
+    return {
+        "node_means": node_means.cpu().numpy(),
+        "node_variances": node_variances.cpu().numpy(),
+        "avg_node_mean": avg_node_mean,
+        "avg_node_variance": avg_node_variance,
+        "mean_spread": mean_spread,
+    }
+
+
+def run(config, exp_path):
     dataset = config["dataset"]
     model = config["esn"]["model"]
     train_nrmse = train(dataset.u_train, dataset.y_train, model)
     test_nrmse = test(dataset.u_test, dataset.y_test, model)
-    return test_nrmse
+
+    stats = _compute_reservoir_statistics(model)
+
+    state_plot_flag = config["state_plot"]
+    if state_plot_flag:
+        model.plot_node_states(num_nodes=10, save_path=exp_path)
+
+    return {"score": float(test_nrmse), **stats}
 
 def run_res_metrics(config):
     """
@@ -41,8 +68,8 @@ def run_res_metrics(config):
     ks = model.hidden_nodes  
     
     # Run the three metrics
-    kq = kernel_quality(20, model, ks)
-    gen = generalization(20, model, ks)
+    kq = 1
+    gen = 1
     mc = memory_capacity(model)
    
     
@@ -58,7 +85,7 @@ def run_res_metrics(config):
 
 
 if __name__ == "__main__":
-    exp_path = "./experiments/res_metrics"
+    exp_path = "./experiments/state_plot/"
     
     logging.basicConfig(
             level=logging.INFO,
@@ -83,8 +110,9 @@ if __name__ == "__main__":
         logger.info("Running in res_metrics mode - computing kernel_quality, generalization, and memory_capacity")
 
     # Collect (param_values_tuple, score/metrics) results - group by unique config and average
-    config_results = {}
-    config_metrics = {}  # For res_metrics mode: store all three metrics separately
+    score_store = {}
+    config_stats = {} if not res_metrics_mode else None
+    config_metrics = {} if res_metrics_mode else None  # For res_metrics mode: store all three metrics separately
     
     # Run each config
     for i, config in enumerate(configs):
@@ -94,7 +122,8 @@ if __name__ == "__main__":
             metrics = run_res_metrics(config.conf)
             test_score = metrics["score"]  # Use memory_capacity as the main score
         else:
-            test_score = run(config.conf)
+            run_result = run(config.conf, exp_path)
+            test_score = run_result["score"]
             metrics = None
 
         # Extract the concrete values for each varied parameter from this config
@@ -108,18 +137,33 @@ if __name__ == "__main__":
             param_values_tuple.append(cur)
         
         key = tuple(param_values_tuple)
-        if key not in config_results:
-            config_results[key] = []
+        if key not in score_store:
+            score_store[key] = []
             if res_metrics_mode:
                 config_metrics[key] = {"kernel_quality": [], "generalization": [], "memory_capacity": []}
+            else:
+                config_stats[key] = {
+                    "node_means": [],
+                    "node_variances": [],
+                    "avg_node_mean": [],
+                    "avg_node_variance": [],
+                    "mean_spread": [],
+                }
         
         # For res_metrics mode, we don't filter by threshold
         # For normal mode, filter out high NRMSE values
         if not res_metrics_mode:
             if test_score < 0.8:
-                config_results[key].append(float(test_score))
+                score_store[key].append(float(test_score))
+                run_stats = dict(run_result)
+                run_stats.pop("score", None)
+                config_stats[key]["node_means"].append(np.array(run_stats["node_means"]))
+                config_stats[key]["node_variances"].append(np.array(run_stats["node_variances"]))
+                config_stats[key]["avg_node_mean"].append(float(run_stats["avg_node_mean"]))
+                config_stats[key]["avg_node_variance"].append(float(run_stats["avg_node_variance"]))
+                config_stats[key]["mean_spread"].append(float(run_stats["mean_spread"]))
         else:
-            config_results[key].append(float(test_score))
+            score_store[key].append(float(test_score))
             # Store all three metrics separately
             config_metrics[key]["kernel_quality"].append(float(metrics["kernel_quality"]))
             config_metrics[key]["generalization"].append(float(metrics["generalization"]))
@@ -155,7 +199,7 @@ if __name__ == "__main__":
     if res_metrics_mode:
         # Store all three metrics separately
         metrics_results = {"kernel_quality": [], "generalization": [], "memory_capacity": []}
-        for key, score_values in config_results.items():
+        for key, score_values in score_store.items():
             avg_score = np.mean(score_values)
             std_score = np.std(score_values)
             avg_kq = np.mean(config_metrics[key]["kernel_quality"])
@@ -167,11 +211,59 @@ if __name__ == "__main__":
             metrics_results["generalization"].append((key, float(avg_gen)))
             metrics_results["memory_capacity"].append((key, float(avg_mc)))
     else:
-        for key, score_values in config_results.items():
+        summary_stats = {}
+        for key, score_values in score_store.items():
+            if not score_values:
+                continue
             avg_score = np.mean(score_values)
             std_score = np.std(score_values)
-            logger.info(f"Config {key} - Average {metric_name}: {avg_score:.6f} ± {std_score:.6f}")
+            stats_entry = config_stats[key]
+            node_means_avg = np.mean(np.stack(stats_entry["node_means"]), axis=0).tolist()
+            node_variances_avg = np.mean(np.stack(stats_entry["node_variances"]), axis=0).tolist()
+            avg_node_mean_avg = float(np.mean(stats_entry["avg_node_mean"]))
+            avg_node_variance_avg = float(np.mean(stats_entry["avg_node_variance"]))
+            mean_spread_avg = float(np.mean(stats_entry["mean_spread"]))
+            summary_stats[key] = {
+                "node_means": node_means_avg,
+                "node_variances": node_variances_avg,
+                "avg_node_mean": avg_node_mean_avg,
+                "avg_node_variance": avg_node_variance_avg,
+                "mean_spread": mean_spread_avg,
+                "n_runs": len(score_values),
+            }
+            logger.info(
+                f"Config {key} - Avg {metric_name}: {avg_score:.6f} ± {std_score:.6f} | "
+                f"Mean(avg): {avg_node_mean_avg:.6f}, Var(avg): {avg_node_variance_avg:.6f}, "
+                f"Mean spread: {mean_spread_avg:.6f}"
+            )
             results.append((key, float(avg_score)))
+
+        if summary_stats:
+            stats_path = os.path.join(exp_path, "reservoir_stats_summary.json")
+            with open(stats_path, "w") as f:
+                json.dump({str(key): value for key, value in summary_stats.items()}, f, indent=2)
+            logger.info(f"Reservoir statistics summary saved to {stats_path}")
+            if param_names:
+                stat_plot_specs = {
+                    "avg_node_variance": "Average Node Variance",
+                    "avg_node_mean": "Average Node Mean",
+                    "mean_spread": "Mean Spread",
+                }
+                for stat_key, stat_label in stat_plot_specs.items():
+                    stat_results = [
+                        (key, summary_stats[key][stat_key]) for key in summary_stats
+                    ]
+                    if stat_results:
+                        plot_gridsearch_results(
+                            param_names,
+                            stat_results,
+                            exp_path,
+                            res_metrics_mode=True,
+                            metrics_results=None,
+                            metric_label=stat_label,
+                            filter_scores=False,
+                            filename_suffix=stat_key,
+                        )
 
     # Plot results if any varied parameters exist
     if param_names:

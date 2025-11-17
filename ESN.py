@@ -4,6 +4,8 @@ from utils.formula import spectral_radius as _spectral_radius
 from matrix import Matrix
 import numpy as np
 import logging
+import matplotlib.pyplot as plt
+import os
 logger = logging.getLogger(__name__)
 from readout import Ridge 
 class ESN(nn.Module):
@@ -78,3 +80,65 @@ class ESN(nn.Module):
             mc += _mc
             self.mcs.append(_mc)
         return float(mc)
+
+    def plot_node_states(
+        self,
+        node_indices=None,
+        num_nodes=10,
+        start=0,
+        end=None,
+        show=True,
+        save_path=None,
+    ):
+        """
+        Plot reservoir node activations over time.
+
+        Args:
+            node_indices (Iterable[int], optional): Specific node indices to plot.
+            num_nodes (int): Max number of nodes to plot if node_indices is None.
+            start (int): Starting timestep (inclusive).
+            end (int, optional): Ending timestep (exclusive). Defaults to full length.
+            show (bool): Whether to display the figure interactively.
+            save_path (str, optional): Path to save the figure (PNG, PDF, etc.).
+        """
+        if not hasattr(self, "X"):
+            raise RuntimeError(
+                "Reservoir states not found. Run a forward pass before plotting."
+            )
+
+        states = self.X.detach().cpu().numpy()
+        total_steps, total_nodes = states.shape
+
+        start = max(0, int(start))
+        end = total_steps if end is None else min(total_steps, int(end))
+        if start >= end:
+            raise ValueError("Invalid time window: 'start' must be < 'end'.")
+
+        if node_indices is None:
+            selected_nodes = list(range(min(num_nodes, total_nodes)))
+        else:
+            selected_nodes = [int(idx) for idx in node_indices if 0 <= idx < total_nodes]
+            if not selected_nodes:
+                raise ValueError("Provided node_indices are outside valid range.")
+            if num_nodes is not None:
+                selected_nodes = selected_nodes[:num_nodes]
+
+        timesteps = np.arange(start, end)
+
+        plt.figure(figsize=(12, 6))
+        for idx in selected_nodes:
+            plt.plot(timesteps, states[start:end, idx], label=f"Node {idx}")
+
+        plt.xlabel("Timestep")
+        plt.ylabel("Node value")
+        plt.title(f"Reservoir node activations ({len(selected_nodes)} nodes)")
+        plt.legend(loc="upper right", ncol=2, fontsize=8)
+        plt.tight_layout()
+
+        if save_path:
+            plt.savefig(os.path.join(save_path, "state_plot.png"), dpi=300)
+
+        if show:
+            plt.show()
+        else:
+            plt.close()

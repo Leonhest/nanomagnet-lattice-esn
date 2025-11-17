@@ -3,7 +3,16 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 
-def plot_gridsearch_results(param_names, results, exp_path, res_metrics_mode=False, metrics_results=None):
+def plot_gridsearch_results(
+    param_names,
+    results,
+    exp_path,
+    res_metrics_mode=False,
+    metrics_results=None,
+    metric_label="NRMSE",
+    filter_scores=True,
+    filename_suffix=None,
+):
     """
     Plot grid search results.
     """
@@ -69,8 +78,8 @@ def plot_gridsearch_results(param_names, results, exp_path, res_metrics_mode=Fal
         plt.close()
         return
     
-    # Filter out results with NRMSE > 0.8 (only for normal mode)
-    if not res_metrics_mode:
+    # Filter out high scores when requested (default for NRMSE)
+    if filter_scores and not res_metrics_mode:
         results = [(pv, score) for pv, score in results if score <= 0.8]
         
         if not results:
@@ -80,6 +89,12 @@ def plot_gridsearch_results(param_names, results, exp_path, res_metrics_mode=Fal
     params_array = np.array([list(pv) for pv, _ in results], dtype=float)
     nrmse_array = np.array([score for _, score in results], dtype=float)
     
+    suffix_part = ""
+    if filename_suffix:
+        safe_suffix = filename_suffix.strip().replace(" ", "_").replace("/", "_")
+        if safe_suffix:
+            suffix_part = f"_{safe_suffix}"
+
     if num_params == 1:
         # Keep matplotlib for the simple 2D case
         x = params_array[:, 0]
@@ -90,13 +105,13 @@ def plot_gridsearch_results(param_names, results, exp_path, res_metrics_mode=Fal
         plt.figure()
         plt.plot(x, y, marker='o')
         plt.xlabel(display_names[0])
-        plt.ylabel('NRMSE')
-        plt.title('Grid Search Performance')
+        plt.ylabel(metric_label)
+        plt.title(f'Grid Search Performance ({metric_label})')
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
         
         # Generate a descriptive filename and save the plot
-        filename = f"{exp_path}/plot_{display_names[0]}.png"
+        filename = f"{exp_path}/plot_{display_names[0]}{suffix_part}.png"
         plt.savefig(filename)
         print(f"Plot saved to {filename}")
         plt.close() # Close the figure to prevent showing it interactively
@@ -120,14 +135,17 @@ def plot_gridsearch_results(param_names, results, exp_path, res_metrics_mode=Fal
     # --- Configure plot based on number of parameters ---
     if num_params == 2:
         x, y = params_array[:, 0], params_array[:, 1]
-        z = c = nrmse_array # NRMSE is both z-axis and color
+        z = c = nrmse_array
+        scene = dict(xaxis_title=display_names[0], yaxis_title=display_names[1], zaxis_title=metric_label)
+        title_text = f'Grid Search Performance ({metric_label})'
+        z = c = nrmse_array
         scene = dict(xaxis_title=display_names[0], yaxis_title=display_names[1], zaxis_title='NRMSE')
         title_text = 'Grid Search Performance'
     else: # 3 or more params
         x, y, z = params_array[:, 0], params_array[:, 1], params_array[:, 2]
         c = nrmse_array # NRMSE is color
         scene = dict(xaxis_title=display_names[0], yaxis_title=display_names[1], zaxis_title=display_names[2])
-        title_text = 'Grid Search Performance (color = NRMSE)'
+        title_text = f'Grid Search Performance (color = {metric_label})'
         if num_params > 3:
             title_text = 'Grid Search (>3 params) projected to first 3 (color = NRMSE)'
 
@@ -137,14 +155,14 @@ def plot_gridsearch_results(param_names, results, exp_path, res_metrics_mode=Fal
         hovertemplate = (
             f"{display_names[0]}: %{{x}}<br>"
             f"{display_names[1]}: %{{y}}<br>"
-            "NRMSE: %{z:.4f}<extra></extra>"
+            f"{metric_label}: %{{z:.4f}}<extra></extra>"
         )
     else:
         hovertemplate = (
             f"{display_names[0]}: %{{x}}<br>"
             f"{display_names[1]}: %{{y}}<br>"
             f"{display_names[2]}: %{{z}}<br>"
-            "NRMSE: %{customdata:.4f}<extra></extra>"
+            f"{metric_label}: %{{customdata:.4f}}<extra></extra>"
         )
 
     # Build figure
@@ -172,13 +190,13 @@ def plot_gridsearch_results(param_names, results, exp_path, res_metrics_mode=Fal
                 colorscale=custom_colorscale,
                 cmin=nrmse_min,
                 cmax=nrmse_max,
-                colorbar=dict(title='NRMSE', len=0.6, x=-0.15),
+                colorbar=dict(title=metric_label, len=0.6, x=-0.15),
                 showscale=True,
                 opacity=0.8,
                 hovertemplate=(
                     f"{display_names[0]}: %{{x}}<br>"
                     f"{display_names[1]}: %{{y}}<br>"
-                    "NRMSE: %{z:.4f}<extra></extra>"
+                    f"{metric_label}: %{{z:.4f}}<extra></extra>"
                 )
             ))
 
@@ -209,7 +227,7 @@ def plot_gridsearch_results(param_names, results, exp_path, res_metrics_mode=Fal
                 colorscale=custom_colorscale,
                 cmin=nrmse_min,
                 cmax=nrmse_max,
-                colorbar=dict(title='NRMSE', len=0.6, x=-0.15),
+                colorbar=dict(title=metric_label, len=0.6, x=-0.15),
                 opacity=0.8
             )
         ))
@@ -221,7 +239,7 @@ def plot_gridsearch_results(param_names, results, exp_path, res_metrics_mode=Fal
 
     # Generate a descriptive filename
     param_str = "_vs_".join(display_names)
-    filename = f"{exp_path}/plot_{param_str}.html"
+    filename = f"{exp_path}/plot_{param_str}{suffix_part}.html"
 
     fig.write_html(filename)
     print(f"Interactive figure saved to {filename}")
