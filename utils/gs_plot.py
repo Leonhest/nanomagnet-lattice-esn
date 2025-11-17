@@ -245,3 +245,192 @@ def plot_gridsearch_results(
     print(f"Interactive figure saved to {filename}")
 
 
+def plot_decile_statistics(param_names, decile_stats, exp_path, stat_key, stat_label):
+    """
+    Plot decile statistics. Works with 0, 1, or 2 gridsearch parameters.
+    - 0 params: 2D plot (decile vs statistic value)
+    - 1 param: 3D surface plot (param vs decile, color = statistic value)
+    - 2 params: 3D scatter plot (param1 vs param2 vs decile, color = statistic value)
+    
+    Args:
+        param_names: List of parameter names (max 2)
+        decile_stats: Dict mapping (param_tuple) -> list of 10 averaged decile stat values
+        exp_path: Path to save plots
+        stat_key: Key for the statistic ('avg_node_mean', 'avg_node_variance', 'mean_spread')
+        stat_label: Display label for the statistic
+    """
+    if len(param_names) > 2:
+        print(f"Cannot plot deciles with >2 parameters. Skipping {stat_key}.")
+        return
+    
+    display_names = [name.split('.')[-1] for name in param_names]
+    
+    # Handle case with 0 gridsearch parameters - simple 2D plot
+    if len(param_names) == 0:
+        # There should be only one entry with empty tuple key
+        if not decile_stats:
+            return
+        # Get the first (and likely only) decile values
+        decile_values = list(decile_stats.values())[0]
+        deciles = np.arange(10)
+        values = np.array(decile_values)
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=deciles,
+            y=values,
+            mode='lines+markers',
+            marker=dict(size=8),
+            line=dict(width=2)
+        ))
+        fig.update_layout(
+            title_text=f'Decile Statistics: {stat_label}',
+            xaxis_title="Decile",
+            yaxis_title=stat_label,
+            margin=dict(l=0, r=0, b=0, t=40)
+        )
+        filename = f"{exp_path}/plot_decile_{stat_key}.html"
+        fig.write_html(filename)
+        print(f"Decile plot saved to {filename}")
+        return
+    
+    # Prepare data: (param1, param2, decile, stat_value)
+    data_points = []
+    for param_tuple, decile_values in decile_stats.items():
+        if len(param_names) == 1:
+            x_val = param_tuple[0]
+            y_val = None
+        else:
+            x_val = param_tuple[0]
+            y_val = param_tuple[1]
+        
+        for decile_idx, stat_value in enumerate(decile_values):
+            if len(param_names) == 1:
+                # 2D plot: param vs decile
+                data_points.append((x_val, decile_idx, stat_value))
+            else:
+                # 3D plot: param1, param2, decile
+                data_points.append((x_val, y_val, decile_idx, stat_value))
+    
+    if not data_points:
+        return
+    
+    # Create colorscale
+    plasma_colors = px.colors.sequential.Plasma
+    n_stops = 20
+    custom_colorscale = []
+    for i in range(n_stops + 1):
+        pos = i / n_stops
+        pos_power = pos ** 0.5
+        color_idx = int(pos_power * (len(plasma_colors) - 1))
+        color_idx = max(min(color_idx, len(plasma_colors) - 1), 0)
+        custom_colorscale.append([pos, plasma_colors[color_idx]])
+    
+    fig = go.Figure()
+    
+    if len(param_names) == 1:
+        # 2D plot: param vs decile, color = stat value
+        x, y, z = zip(*data_points)
+        z_min, z_max = min(z), max(z)
+        
+        # Try to form a regular grid
+        x_unique = np.unique(x)
+        y_unique = np.arange(10)  # Deciles 0-9
+        
+        z_grid = np.full((len(y_unique), len(x_unique)), np.nan, dtype=float)
+        index_map = {(float(xv), int(yv)): zv for xv, yv, zv in zip(x, y, z)}
+        for j, yv in enumerate(y_unique):
+            for i, xv in enumerate(x_unique):
+                if (float(xv), int(yv)) in index_map:
+                    z_grid[j, i] = index_map[(float(xv), int(yv))]
+        
+        # Add surface if we have valid values
+        if np.isfinite(z_grid).sum() >= 4:
+            fig.add_trace(go.Surface(
+                x=x_unique,
+                y=y_unique,
+                z=z_grid,
+                colorscale=custom_colorscale,
+                cmin=z_min,
+                cmax=z_max,
+                colorbar=dict(title=stat_label, len=0.6, x=-0.15),
+                showscale=True,
+                opacity=0.8,
+                hovertemplate=(
+                    f"{display_names[0]}: %{{x}}<br>"
+                    f"Decile: %{{y}}<br>"
+                    f"{stat_label}: %{{z:.4f}}<extra></extra>"
+                )
+            ))
+        
+        # Overlay scatter markers
+        fig.add_trace(go.Scatter3d(
+            x=list(x), y=list(y), z=list(z), mode='markers',
+            hovertemplate=(
+                f"{display_names[0]}: %{{x}}<br>"
+                f"Decile: %{{y}}<br>"
+                f"{stat_label}: %{{z:.4f}}<extra></extra>"
+            ),
+            marker=dict(
+                size=4,
+                color=list(z),
+                colorscale=custom_colorscale,
+                cmin=z_min,
+                cmax=z_max,
+                opacity=0.9
+            ),
+            showlegend=False
+        ))
+        
+        scene = dict(
+            xaxis_title=display_names[0],
+            yaxis_title="Decile",
+            zaxis_title=stat_label
+        )
+        title_text = f'Decile Statistics: {stat_label}'
+    else:
+        # 3D plot: param1, param2, decile, color = stat value
+        x, y, z, c = zip(*data_points)
+        c_min, c_max = min(c), max(c)
+        
+        fig.add_trace(go.Scatter3d(
+            x=list(x), y=list(y), z=list(z), mode='markers',
+            customdata=list(c),
+            hovertemplate=(
+                f"{display_names[0]}: %{{x}}<br>"
+                f"{display_names[1]}: %{{y}}<br>"
+                f"Decile: %{{z}}<br>"
+                f"{stat_label}: %{{customdata:.4f}}<extra></extra>"
+            ),
+            marker=dict(
+                size=5,
+                color=list(c),
+                colorscale=custom_colorscale,
+                cmin=c_min,
+                cmax=c_max,
+                colorbar=dict(title=stat_label, len=0.6, x=-0.15),
+                opacity=0.8
+            )
+        ))
+        
+        scene = dict(
+            xaxis_title=display_names[0],
+            yaxis_title=display_names[1],
+            zaxis_title="Decile"
+        )
+        title_text = f'Decile Statistics: {stat_label} (color)'
+    
+    fig.update_layout(
+        title_text=title_text,
+        scene=scene,
+        margin=dict(l=0, r=0, b=0, t=40)
+    )
+    
+    # Generate filename
+    param_str = "_vs_".join(display_names)
+    filename = f"{exp_path}/plot_{param_str}_decile_{stat_key}.html"
+    
+    fig.write_html(filename)
+    print(f"Decile plot saved to {filename}")
+
+

@@ -1,5 +1,5 @@
 from utils.config_loader import ConfigLoader
-from utils.gs_plot import plot_gridsearch_results
+from utils.gs_plot import plot_gridsearch_results, plot_decile_statistics
 from ESN import ESN
 from metric import nrmse, kernel_quality, generalization, memory_capacity
 import os
@@ -25,10 +25,13 @@ def test(u_test, y_test, model):
     logger.info(f"NRMSE test: {nrmse_value}")
     return float(nrmse_value)
 
-def _compute_reservoir_statistics(model):
-    if not hasattr(model, "X"):
-        raise RuntimeError("Reservoir states not available; run a forward pass first.")
-    states = model.X.detach()
+def _compute_reservoir_statistics(model, states=None):
+    if states is None:
+        if not hasattr(model, "X"):
+            raise RuntimeError("Reservoir states not available; run a forward pass first.")
+        states = model.X.detach()
+    else:
+        states = states.detach()
     node_means = torch.mean(states, dim=0)
     node_variances = torch.var(states, dim=0, unbiased=False)
     avg_node_mean = torch.mean(node_means).item()
@@ -51,11 +54,32 @@ def run(config, exp_path):
 
     stats = _compute_reservoir_statistics(model)
 
-    state_plot_flag = config["state_plot"]
+    state_plot_flag = config.get("state_plot", False)
     if state_plot_flag:
         model.plot_node_states(num_nodes=10, save_path=exp_path)
 
-    return {"score": float(test_nrmse), **stats}
+    result = {"score": float(test_nrmse), **stats}
+    
+    # Compute decile statistics if requested
+    plot_deciles = config.get("plot_deciles", False)
+    if plot_deciles:
+        if not hasattr(model, "X"):
+            raise RuntimeError("Reservoir states not available for decile computation.")
+        states = model.X.detach()
+        num_timesteps = states.shape[0]
+        decile_size = num_timesteps // 10
+        
+        decile_stats = []
+        for decile_idx in range(10):
+            start_idx = decile_idx * decile_size
+            end_idx = (decile_idx + 1) * decile_size if decile_idx < 9 else num_timesteps
+            decile_states = states[start_idx:end_idx]
+            decile_stat = _compute_reservoir_statistics(model, states=decile_states)
+            decile_stats.append(decile_stat)
+        
+        result["decile_stats"] = decile_stats
+
+    return result
 
 def run_res_metrics(config):
     """
@@ -85,7 +109,7 @@ def run_res_metrics(config):
 
 
 if __name__ == "__main__":
-    exp_path = "./experiments/self_input/"
+    exp_path = "./experiments/test/"
     
     logging.basicConfig(
             level=logging.INFO,
@@ -109,10 +133,20 @@ if __name__ == "__main__":
     if res_metrics_mode:
         logger.info("Running in res_metrics mode - computing kernel_quality, generalization, and memory_capacity")
 
+    # Check if plot_deciles is enabled
+    plot_deciles = configs[0].conf.get("plot_deciles", False) if configs else False
+    if plot_deciles:
+        if len(param_names) > 2:
+            logger.warning("plot_deciles only works with <= 2 gridsearch params. Disabling decile plotting.")
+            plot_deciles = False
+        else:
+            logger.info("Decile statistics will be computed and plotted")
+
     # Collect (param_values_tuple, score/metrics) results - group by unique config and average
     score_store = {}
     config_stats = {} if not res_metrics_mode else None
     config_metrics = {} if res_metrics_mode else None  # For res_metrics mode: store all three metrics separately
+    config_decile_stats = {} if plot_deciles and not res_metrics_mode else None
     
     # Run each config
     for i, config in enumerate(configs):
@@ -149,6 +183,12 @@ if __name__ == "__main__":
                     "avg_node_variance": [],
                     "mean_spread": [],
                 }
+                if plot_deciles:
+                    config_decile_stats[key] = {
+                        "avg_node_mean": [[] for _ in range(10)],
+                        "avg_node_variance": [[] for _ in range(10)],
+                        "mean_spread": [[] for _ in range(10)],
+                    }
         
         # For res_metrics mode, we don't filter by threshold
         # For normal mode, filter out high NRMSE values
@@ -162,6 +202,14 @@ if __name__ == "__main__":
                 config_stats[key]["avg_node_mean"].append(float(run_stats["avg_node_mean"]))
                 config_stats[key]["avg_node_variance"].append(float(run_stats["avg_node_variance"]))
                 config_stats[key]["mean_spread"].append(float(run_stats["mean_spread"]))
+                
+                # Collect decile statistics if enabled
+                if plot_deciles and "decile_stats" in run_result:
+                    for decile_idx in range(10):
+                        decile_stat = run_result["decile_stats"][decile_idx]
+                        config_decile_stats[key]["avg_node_mean"][decile_idx].append(float(decile_stat["avg_node_mean"]))
+                        config_decile_stats[key]["avg_node_variance"][decile_idx].append(float(decile_stat["avg_node_variance"]))
+                        config_decile_stats[key]["mean_spread"][decile_idx].append(float(decile_stat["mean_spread"]))
         else:
             score_store[key].append(float(test_score))
             # Store all three metrics separately
@@ -263,6 +311,48 @@ if __name__ == "__main__":
                             metric_label=stat_label,
                             filter_scores=False,
                             filename_suffix=stat_key,
+                        )
+            
+            # Plot decile statistics if enabled
+            if plot_deciles and config_decile_stats:
+                # Average decile statistics across runs
+                averaged_decile_stats = {}
+                for key in config_decile_stats:
+                    if key not in score_store or not score_store[key]:
+                        continue
+                    averaged_decile_stats[key] = {
+                        "avg_node_mean": [
+                            float(np.mean(config_decile_stats[key]["avg_node_mean"][d])) 
+                            for d in range(10)
+                        ],
+                        "avg_node_variance": [
+                            float(np.mean(config_decile_stats[key]["avg_node_variance"][d])) 
+                            for d in range(10)
+                        ],
+                        "mean_spread": [
+                            float(np.mean(config_decile_stats[key]["mean_spread"][d])) 
+                            for d in range(10)
+                        ],
+                    }
+                
+                # Plot each statistic across deciles
+                decile_stat_specs = {
+                    "avg_node_variance": "Average Node Variance",
+                    "avg_node_mean": "Average Node Mean",
+                    "mean_spread": "Mean Spread",
+                }
+                for stat_key, stat_label in decile_stat_specs.items():
+                    decile_data = {
+                        key: averaged_decile_stats[key][stat_key] 
+                        for key in averaged_decile_stats
+                    }
+                    if decile_data:
+                        plot_decile_statistics(
+                            param_names,
+                            decile_data,
+                            exp_path,
+                            stat_key,
+                            stat_label
                         )
 
     # Plot results if any varied parameters exist
