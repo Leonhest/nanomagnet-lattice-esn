@@ -85,7 +85,7 @@ def run_res_metrics(config):
 
 
 if __name__ == "__main__":
-    exp_path = "./experiments/test/"
+    exp_path = "./experiments/self_input/"
     
     logging.basicConfig(
             level=logging.INFO,
