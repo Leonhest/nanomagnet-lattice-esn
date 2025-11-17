@@ -32,15 +32,21 @@ class Matrix:
         return W_in
 
     def _init_W_res(self):
-        m = int(sqrt(self.size))
-        n = int(sqrt(self.size))
-        self.G_res = self.rectangular(m, n)
-        self.G_res = self._make_weights_negative(self.G_res, self.W_res_args["sign_frac"])
+        if self.W_res_args["lattice"]:
+            m = int(sqrt(self.size))
+            n = int(sqrt(self.size))
+            self.G_res = self.rectangular(m, n)
+            self.G_res = self._make_weights_negative(self.G_res, self.W_res_args["sign_frac"])
 
-        self.G_res = self._make_graph_directed(self.G_res, self.W_res_args["directed"])
-        self._self_connection(self.G_res)
-        W_res = nx.to_numpy_array(self.G_res)
-        return torch.FloatTensor(W_res)
+            self.G_res = self._make_graph_directed(self.G_res, self.W_res_args["directed"])
+            self._self_connection(self.G_res)
+            W_res = nx.to_numpy_array(self.G_res)
+            return torch.FloatTensor(W_res)
+        else:
+            W_res = torch.rand(self.size, self.size) * 2 - 1
+            W_res[torch.rand(self.size, self.size) > 0.1] = 0.0
+            W_res[torch.eye(self.size) == 1] = self.W_res_args["self_connection"]
+            return W_res
 
     def tetragonal(self, dim, periodic=False, dist_function=None):
         G = nx.grid_graph(dim, periodic=periodic)

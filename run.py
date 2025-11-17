@@ -85,7 +85,7 @@ def run_res_metrics(config):
 
 
 if __name__ == "__main__":
-    exp_path = "./experiments/state_plot/"
+    exp_path = "./experiments/normal_esn2/"
     
     logging.basicConfig(
             level=logging.INFO,
