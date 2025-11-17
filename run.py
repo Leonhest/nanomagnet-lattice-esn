@@ -68,8 +68,8 @@ def run_res_metrics(config):
     ks = model.hidden_nodes  
     
     # Run the three metrics
-    kq = 1
-    gen = 1
+    kq = kernel_quality(20, model, ks)
+    gen = generalization(20,model, ks)
     mc = memory_capacity(model)
    
     
@@ -85,7 +85,7 @@ def run_res_metrics(config):
 
 
 if __name__ == "__main__":
-    exp_path = "./experiments/normal_esn2/"
+    exp_path = "./experiments/test/"
     
     logging.basicConfig(
             level=logging.INFO,
