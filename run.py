@@ -115,7 +115,7 @@ def run_res_metrics(config):
 
 
 if __name__ == "__main__":
-    exp_path = "./experiments/rec_influ/"
+    exp_path = "./experiments/self_rec_influ_uniform_weights/"
     
     logging.basicConfig(
             level=logging.INFO,
