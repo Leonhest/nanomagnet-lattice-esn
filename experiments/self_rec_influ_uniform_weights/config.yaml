@@ -1,4 +1,4 @@
-num_runs: 10
+num_runs: 100
 res_metrics: False
 state_plot: False
 plot_deciles: False
