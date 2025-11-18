@@ -43,7 +43,7 @@ class Matrix:
             W_res = nx.to_numpy_array(self.G_res)
             return torch.FloatTensor(W_res)
         else:
-            W_res = torch.rand(self.size, self.size) * 2 - 1
+            W_res = (torch.randint(0, 2, (self.size, self.size), dtype=torch.float32) * 2) - 1
             W_res[torch.rand(self.size, self.size) > 0.1] = 0.0
             W_res[torch.eye(self.size) == 1] = self.W_res_args["self_connection"]
             return W_res

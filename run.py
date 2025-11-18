@@ -8,6 +8,7 @@ import logging
 import numpy as np
 import torch
 import gc
+from utils.formula import calculate_total_recurrent_influence
 logger = logging.getLogger(__name__)
 
 
@@ -37,12 +38,16 @@ def _compute_reservoir_statistics(model, states=None):
     avg_node_mean = torch.mean(node_means).item()
     avg_node_variance = torch.mean(node_variances).item()
     mean_spread = torch.std(node_means, unbiased=False).item()
+    W_res = model.W.W_res.detach().cpu().numpy()
+    total_recurrent_influence = calculate_total_recurrent_influence(W_res)
+    avg_total_recurrent_influence = float(np.mean(total_recurrent_influence))
     return {
         "node_means": node_means.cpu().numpy(),
         "node_variances": node_variances.cpu().numpy(),
         "avg_node_mean": avg_node_mean,
         "avg_node_variance": avg_node_variance,
         "mean_spread": mean_spread,
+        "avg_total_recurrent_influence": avg_total_recurrent_influence,
     }
 
 
@@ -53,6 +58,7 @@ def run(config, exp_path):
     test_nrmse = test(dataset.u_test, dataset.y_test, model)
 
     stats = _compute_reservoir_statistics(model)
+    logger.info(f"Average Total Recurrent Influence: {stats['avg_total_recurrent_influence']}")
 
     state_plot_flag = config.get("state_plot", False)
     if state_plot_flag:
@@ -109,7 +115,7 @@ def run_res_metrics(config):
 
 
 if __name__ == "__main__":
-    exp_path = "./experiments/test/"
+    exp_path = "./experiments/rec_influ/"
     
     logging.basicConfig(
             level=logging.INFO,
@@ -182,6 +188,7 @@ if __name__ == "__main__":
                     "avg_node_mean": [],
                     "avg_node_variance": [],
                     "mean_spread": [],
+                    "avg_total_recurrent_influence": [],
                 }
                 if plot_deciles:
                     config_decile_stats[key] = {
@@ -202,6 +209,7 @@ if __name__ == "__main__":
                 config_stats[key]["avg_node_mean"].append(float(run_stats["avg_node_mean"]))
                 config_stats[key]["avg_node_variance"].append(float(run_stats["avg_node_variance"]))
                 config_stats[key]["mean_spread"].append(float(run_stats["mean_spread"]))
+                config_stats[key]["avg_total_recurrent_influence"].append(float(run_stats["avg_total_recurrent_influence"]))
                 
                 # Collect decile statistics if enabled
                 if plot_deciles and "decile_stats" in run_result:
@@ -271,18 +279,20 @@ if __name__ == "__main__":
             avg_node_mean_avg = float(np.mean(stats_entry["avg_node_mean"]))
             avg_node_variance_avg = float(np.mean(stats_entry["avg_node_variance"]))
             mean_spread_avg = float(np.mean(stats_entry["mean_spread"]))
+            avg_tri_avg = float(np.mean(stats_entry["avg_total_recurrent_influence"]))
             summary_stats[key] = {
                 "node_means": node_means_avg,
                 "node_variances": node_variances_avg,
                 "avg_node_mean": avg_node_mean_avg,
                 "avg_node_variance": avg_node_variance_avg,
                 "mean_spread": mean_spread_avg,
+                "avg_total_recurrent_influence": avg_tri_avg,
                 "n_runs": len(score_values),
             }
             logger.info(
                 f"Config {key} - Avg {metric_name}: {avg_score:.6f} ± {std_score:.6f} | "
                 f"Mean(avg): {avg_node_mean_avg:.6f}, Var(avg): {avg_node_variance_avg:.6f}, "
-                f"Mean spread: {mean_spread_avg:.6f}"
+                f"Mean spread: {mean_spread_avg:.6f}, TRI(avg): {avg_tri_avg:.6f}"
             )
             results.append((key, float(avg_score)))
 
@@ -296,6 +306,7 @@ if __name__ == "__main__":
                     "avg_node_variance": "Average Node Variance",
                     "avg_node_mean": "Average Node Mean",
                     "mean_spread": "Mean Spread",
+                    "avg_total_recurrent_influence": "Average Total Recurrent Influence",
                 }
                 for stat_key, stat_label in stat_plot_specs.items():
                     stat_results = [
