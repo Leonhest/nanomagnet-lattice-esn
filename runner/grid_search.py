@@ -65,25 +65,18 @@ def _extract_param_key(conf, param_names):
     return tuple(param_values_tuple)
 
 
-def _ensure_key_initialized(
-    key,
-    score_store,
-    *,
-    res_metrics_mode,
-    plot_deciles,
-    config_stats=None,
-    config_metrics=None,
-    config_decile_stats=None,
-):
-    if key in score_store:
+def _ensure_nrmse_bucket_initialized(key, nrmse_runs_by_config, *, plot_deciles):
+    """
+    Initialize per-config accumulators for the NRMSE experiment mode.
+
+    nrmse_runs_by_config[key] stores lists across repeated runs (num_runs) for the
+    same hyperparameter configuration.
+    """
+    if key in nrmse_runs_by_config:
         return
 
-    score_store[key] = []
-    if res_metrics_mode:
-        config_metrics[key] = {"kernel_quality": [], "generalization": [], "memory_capacity": []}
-        return
-
-    config_stats[key] = {
+    nrmse_runs_by_config[key] = {
+        "scores": [],
         "node_means": [],
         "node_variances": [],
         "avg_node_mean": [],
@@ -92,11 +85,21 @@ def _ensure_key_initialized(
         "avg_total_recurrent_influence": [],
     }
     if plot_deciles:
-        config_decile_stats[key] = {
+        nrmse_runs_by_config[key]["deciles"] = {
             "avg_node_mean": [[] for _ in range(10)],
             "avg_node_variance": [[] for _ in range(10)],
             "mean_spread": [[] for _ in range(10)],
         }
+
+
+def _ensure_res_metrics_bucket_initialized(key, res_metrics_runs_by_config):
+    """
+    Initialize per-config accumulators for the res_metrics experiment mode.
+    """
+    if key in res_metrics_runs_by_config:
+        return
+
+    res_metrics_runs_by_config[key] = {"kernel_quality": [], "generalization": [], "memory_capacity": []}
 
 
 def _record_nrmse_run(
@@ -104,39 +107,36 @@ def _record_nrmse_run(
     *,
     test_score,
     run_result,
-    score_store,
-    config_stats,
+    nrmse_runs_by_config,
     plot_deciles,
-    config_decile_stats,
 ):
     # Filter out high NRMSE values
     if test_score >= 0.8:
         return
 
-    score_store[key].append(float(test_score))
+    bucket = nrmse_runs_by_config[key]
+    bucket["scores"].append(float(test_score))
 
-    run_stats = dict(run_result)
-    run_stats.pop("score", None)
-    config_stats[key]["node_means"].append(np.array(run_stats["node_means"]))
-    config_stats[key]["node_variances"].append(np.array(run_stats["node_variances"]))
-    config_stats[key]["avg_node_mean"].append(float(run_stats["avg_node_mean"]))
-    config_stats[key]["avg_node_variance"].append(float(run_stats["avg_node_variance"]))
-    config_stats[key]["mean_spread"].append(float(run_stats["mean_spread"]))
-    config_stats[key]["avg_total_recurrent_influence"].append(float(run_stats["avg_total_recurrent_influence"]))
+    bucket["node_means"].append(np.array(run_result["node_means"]))
+    bucket["node_variances"].append(np.array(run_result["node_variances"]))
+    bucket["avg_node_mean"].append(float(run_result["avg_node_mean"]))
+    bucket["avg_node_variance"].append(float(run_result["avg_node_variance"]))
+    bucket["mean_spread"].append(float(run_result["mean_spread"]))
+    bucket["avg_total_recurrent_influence"].append(float(run_result["avg_total_recurrent_influence"]))
 
     # Collect decile statistics if enabled
-    if plot_deciles and config_decile_stats is not None and "decile_stats" in run_result:
+    if plot_deciles and ("deciles" in bucket) and "decile_stats" in run_result:
         for decile_idx in range(10):
             decile_stat = run_result["decile_stats"][decile_idx]
-            config_decile_stats[key]["avg_node_mean"][decile_idx].append(float(decile_stat["avg_node_mean"]))
-            config_decile_stats[key]["avg_node_variance"][decile_idx].append(float(decile_stat["avg_node_variance"]))
-            config_decile_stats[key]["mean_spread"][decile_idx].append(float(decile_stat["mean_spread"]))
+            bucket["deciles"]["avg_node_mean"][decile_idx].append(float(decile_stat["avg_node_mean"]))
+            bucket["deciles"]["avg_node_variance"][decile_idx].append(float(decile_stat["avg_node_variance"]))
+            bucket["deciles"]["mean_spread"][decile_idx].append(float(decile_stat["mean_spread"]))
 
 
-def _record_res_metrics_run(key, *, metrics, config_metrics):
-    config_metrics[key]["kernel_quality"].append(float(metrics["kernel_quality"]))
-    config_metrics[key]["generalization"].append(float(metrics["generalization"]))
-    config_metrics[key]["memory_capacity"].append(float(metrics["memory_capacity"]))
+def _record_res_metrics_run(key, *, metrics, res_metrics_runs_by_config):
+    res_metrics_runs_by_config[key]["kernel_quality"].append(float(metrics["kernel_quality"]))
+    res_metrics_runs_by_config[key]["generalization"].append(float(metrics["generalization"]))
+    res_metrics_runs_by_config[key]["memory_capacity"].append(float(metrics["memory_capacity"]))
 
 
 def _cleanup_config(config):
@@ -159,10 +159,8 @@ def _cleanup_config(config):
 
 
 def _run_all_configs(configs, param_names, exp_path, *, res_metrics_mode, plot_deciles):
-    score_store = {}
-    config_stats = {} if not res_metrics_mode else None
-    config_metrics = {} if res_metrics_mode else None  # store all three metrics separately
-    config_decile_stats = {} if plot_deciles and not res_metrics_mode else None
+    nrmse_runs_by_config = {} if not res_metrics_mode else None
+    res_metrics_runs_by_config = {} if res_metrics_mode else None
 
     for i, config in enumerate(configs):
         logger.info(f"Running config {i+1}/{len(configs)}")
@@ -170,34 +168,19 @@ def _run_all_configs(configs, param_names, exp_path, *, res_metrics_mode, plot_d
         if res_metrics_mode:
             metrics = run_res_metrics(config.conf)
             key = _extract_param_key(config.conf, param_names)
-            _ensure_key_initialized(
-                key,
-                score_store,
-                res_metrics_mode=True,
-                plot_deciles=False,
-                config_metrics=config_metrics,
-            )
-            _record_res_metrics_run(key, metrics=metrics, config_metrics=config_metrics)
+            _ensure_res_metrics_bucket_initialized(key, res_metrics_runs_by_config)
+            _record_res_metrics_run(key, metrics=metrics, res_metrics_runs_by_config=res_metrics_runs_by_config)
         else:
             run_result = run(config.conf, exp_path)
             test_score = run_result["score"]
             key = _extract_param_key(config.conf, param_names)
-            _ensure_key_initialized(
-                key,
-                score_store,
-                res_metrics_mode=False,
-                plot_deciles=plot_deciles,
-                config_stats=config_stats,
-                config_decile_stats=config_decile_stats,
-            )
+            _ensure_nrmse_bucket_initialized(key, nrmse_runs_by_config, plot_deciles=plot_deciles)
             _record_nrmse_run(
                 key,
                 test_score=test_score,
                 run_result=run_result,
-                score_store=score_store,
-                config_stats=config_stats,
+                nrmse_runs_by_config=nrmse_runs_by_config,
                 plot_deciles=plot_deciles,
-                config_decile_stats=config_decile_stats,
             )
 
         _cleanup_config(config)
@@ -207,10 +190,10 @@ def _run_all_configs(configs, param_names, exp_path, *, res_metrics_mode, plot_d
         if (i + 1) % 1000 == 0 or (i + 1) == len(configs):
             gc.collect()
 
-    return score_store, config_stats, config_metrics, config_decile_stats
+    return nrmse_runs_by_config, res_metrics_runs_by_config
 
 
-def _aggregate_res_metrics(config_metrics):
+def _aggregate_res_metrics(res_metrics_runs_by_config):
     """
     Average kernel_quality, generalization, and memory_capacity across runs.
 
@@ -220,7 +203,7 @@ def _aggregate_res_metrics(config_metrics):
     """
     summary_stats = {}
 
-    for key, metric_store in config_metrics.items():
+    for key, metric_store in res_metrics_runs_by_config.items():
         kq_values = metric_store["kernel_quality"]
         gen_values = metric_store["generalization"]
         mc_values = metric_store["memory_capacity"]
@@ -248,22 +231,22 @@ def _aggregate_res_metrics(config_metrics):
     return summary_stats
 
 
-def _aggregate_nrmse_results(score_store, config_stats):
+def _aggregate_nrmse_results(nrmse_runs_by_config):
     summary_stats = {}
 
-    for key, score_values in score_store.items():
+    for key, bucket in nrmse_runs_by_config.items():
+        score_values = bucket["scores"]
         if not score_values:
             continue
 
         avg_score = np.mean(score_values)
         std_score = np.std(score_values)
-        stats_entry = config_stats[key]
-        node_means_avg = np.mean(np.stack(stats_entry["node_means"]), axis=0).tolist()
-        node_variances_avg = np.mean(np.stack(stats_entry["node_variances"]), axis=0).tolist()
-        avg_node_mean_avg = float(np.mean(stats_entry["avg_node_mean"]))
-        avg_node_variance_avg = float(np.mean(stats_entry["avg_node_variance"]))
-        mean_spread_avg = float(np.mean(stats_entry["mean_spread"]))
-        avg_tri_avg = float(np.mean(stats_entry["avg_total_recurrent_influence"]))
+        node_means_avg = np.mean(np.stack(bucket["node_means"]), axis=0).tolist()
+        node_variances_avg = np.mean(np.stack(bucket["node_variances"]), axis=0).tolist()
+        avg_node_mean_avg = float(np.mean(bucket["avg_node_mean"]))
+        avg_node_variance_avg = float(np.mean(bucket["avg_node_variance"]))
+        mean_spread_avg = float(np.mean(bucket["mean_spread"]))
+        avg_tri_avg = float(np.mean(bucket["avg_total_recurrent_influence"]))
 
         summary_stats[key] = {
             "score": float(avg_score),
@@ -295,21 +278,22 @@ def _write_summary_stats(summary_stats, exp_path):
     return stats_path
 
 
-def _plot_decile_stats(score_store, config_decile_stats, param_names, exp_path):
-    if not config_decile_stats:
+def _plot_decile_stats(nrmse_runs_by_config, param_names, exp_path):
+    if not nrmse_runs_by_config:
         return
 
     # Average decile statistics across runs
     averaged_decile_stats = {}
-    for key in config_decile_stats:
-        if key not in score_store or not score_store[key]:
+    for key, bucket in nrmse_runs_by_config.items():
+        if not bucket.get("scores"):
+            continue
+        deciles = bucket.get("deciles")
+        if not deciles:
             continue
         averaged_decile_stats[key] = {
-            "avg_node_mean": [float(np.mean(config_decile_stats[key]["avg_node_mean"][d])) for d in range(10)],
-            "avg_node_variance": [
-                float(np.mean(config_decile_stats[key]["avg_node_variance"][d])) for d in range(10)
-            ],
-            "mean_spread": [float(np.mean(config_decile_stats[key]["mean_spread"][d])) for d in range(10)],
+            "avg_node_mean": [float(np.mean(deciles["avg_node_mean"][d])) for d in range(10)],
+            "avg_node_variance": [float(np.mean(deciles["avg_node_variance"][d])) for d in range(10)],
+            "mean_spread": [float(np.mean(deciles["mean_spread"][d])) for d in range(10)],
         }
 
     decile_stat_specs = {
@@ -329,10 +313,8 @@ def _finalize(
     *,
     res_metrics_mode,
     plot_deciles,
-    score_store,
-    config_stats,
-    config_metrics,
-    config_decile_stats,
+    nrmse_runs_by_config,
+    res_metrics_runs_by_config,
 ):
     """
     Aggregate results, write summaries, and render plots.
@@ -340,13 +322,13 @@ def _finalize(
     plot_payload = None
 
     if res_metrics_mode:
-        plot_payload = _aggregate_res_metrics(config_metrics)
+        plot_payload = _aggregate_res_metrics(res_metrics_runs_by_config)
     else:
-        summary_stats = _aggregate_nrmse_results(score_store, config_stats)
+        summary_stats = _aggregate_nrmse_results(nrmse_runs_by_config)
         plot_payload = summary_stats
         _write_summary_stats(summary_stats, exp_path)
         if plot_deciles:
-            _plot_decile_stats(score_store, config_decile_stats, param_names, exp_path)
+            _plot_decile_stats(nrmse_runs_by_config, param_names, exp_path)
 
     # Plot results if any varied parameters exist
     if param_names:
@@ -366,7 +348,7 @@ def main(exp_path: str = "./experiments/test/") -> None:
     configs, param_names = _load_configs(exp_path)
     res_metrics_mode, plot_deciles = _detect_modes(configs, param_names)
 
-    score_store, config_stats, config_metrics, config_decile_stats = _run_all_configs(
+    nrmse_runs_by_config, res_metrics_runs_by_config = _run_all_configs(
         configs,
         param_names,
         exp_path,
@@ -379,10 +361,8 @@ def main(exp_path: str = "./experiments/test/") -> None:
         param_names,
         res_metrics_mode=res_metrics_mode,
         plot_deciles=plot_deciles,
-        score_store=score_store,
-        config_stats=config_stats,
-        config_metrics=config_metrics,
-        config_decile_stats=config_decile_stats,
+        nrmse_runs_by_config=nrmse_runs_by_config,
+        res_metrics_runs_by_config=res_metrics_runs_by_config,
     )
 
 
