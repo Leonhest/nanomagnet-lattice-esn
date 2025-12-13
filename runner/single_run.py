@@ -21,7 +21,7 @@ def run(config, exp_path):
     stats = compute_reservoir_statistics(model)
     logger.info(f"Average Total Recurrent Influence: {stats['avg_total_recurrent_influence']}")
 
-    if config["state_plot"]:
+    if config.get("state_plot", False):
         model.plot_node_states(num_nodes=10, save_path=exp_path)
 
     result = {"score": float(test_nrmse), **stats}
