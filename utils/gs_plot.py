@@ -243,27 +243,19 @@ def plot_gridsearch_results(
     filter_threshold=0.8,
 ):
     """
-    Plot the main score (`stats['score']`) plus any known extra scalar stats present
-    in `summary_stats`.
+    Plot any scalar stats present in `summary_stats`.
 
     Args:
-        param_names: list[str]
-        summary_stats: dict[param_tuple, dict[str, Any]]
-        exp_path: str
-        metric_label: label for the main score
+        param_names: list of parameter names
+        summary_stats: dict of summary statistics
+        exp_path: path to save plots
         filter_threshold: optional threshold (applies only to the main score plot)
     """
     if not summary_stats:
         return
 
-    display_names = [name.split(".")[-1] for name in param_names]
-    num_params = len(param_names)
-
-    # Plot known scalar fields (avoid huge arrays like node_means).
     metric_specs = {
-        # Primary score (NRMSE runs only)
         "score": "NRMSE",
-        # Reservoir summary stats
         "avg_node_variance": "Average Node Variance",
         "avg_node_mean": "Average Node Mean",
         "mean_spread": "Mean Spread",

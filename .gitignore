@@ -3,3 +3,4 @@
 .DS_Store
 **/data/datasets/**
 experiments/run.log
+experiments/test/

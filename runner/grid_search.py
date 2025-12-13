@@ -116,7 +116,6 @@ def _record_nrmse_run(
 
     bucket = nrmse_runs_by_config[key]
     bucket["scores"].append(float(test_score))
-
     bucket["node_means"].append(np.array(run_result["node_means"]))
     bucket["node_variances"].append(np.array(run_result["node_variances"]))
     bucket["avg_node_mean"].append(float(run_result["avg_node_mean"]))
