@@ -28,6 +28,9 @@ esn:
     W_res_args:
       lattice: True
       self_connection: 0.0
-      directed: 0.9
-      sign_frac: [0.0, 0.1]
-
+      directed_edges_fraction: 0.9
+      directed_edges_weights_fraction: 0.5
+      sign_frac: 0.0
+      weights_distribution: constant # constant, random, custom
+      neighboorhod: Von_Neumann # Von_Neumann, Moore
+      
