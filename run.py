@@ -1,7 +1,7 @@
 from runner.grid_search import main
 import sys
 
-DEFAULT_EXP_PATH = "./experiments/test/"
+DEFAULT_EXP_PATH = "./experiments/neigborhood/"
 
 
 if __name__ == "__main__":

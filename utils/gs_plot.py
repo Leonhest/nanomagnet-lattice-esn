@@ -3,6 +3,41 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 
+def _encode_params(results, num_params):
+    """
+    Helper to encode parameters into a numeric array for plotting.
+    Returns:
+        encoded_array: (N, num_params) float array
+        axis_mappings: list of dicts or None. If axis_mappings[i] is not None,
+                       it maps {str_value: int_index} for the i-th parameter.
+        axis_tick_labels: list of lists or None. If axis_tick_labels[i] is not None,
+                          it contains the string labels corresponding to indices.
+    """
+    raw_params = [list(pv) for pv, _ in results] # List of lists
+    encoded_cols = []
+    axis_mappings = []
+    axis_tick_labels = []
+
+    for col_idx in range(num_params):
+        col_values = [row[col_idx] for row in raw_params]
+        try:
+            # Try converting to float
+            col_float = np.array(col_values, dtype=float)
+            encoded_cols.append(col_float)
+            axis_mappings.append(None)
+            axis_tick_labels.append(None)
+        except (ValueError, TypeError):
+            # If not numeric, encode as categorical
+            unique_vals = sorted(list(set(col_values)))
+            val_to_idx = {val: i for i, val in enumerate(unique_vals)}
+            col_encoded = np.array([val_to_idx[v] for v in col_values], dtype=float)
+            encoded_cols.append(col_encoded)
+            axis_mappings.append(val_to_idx)
+            axis_tick_labels.append(unique_vals)
+
+    encoded_array = np.column_stack(encoded_cols)
+    return encoded_array, axis_mappings, axis_tick_labels
+
 def _plot_kq_gen_combined(param_names, summary_stats, exp_path):
     """
     If we're doing a 1D grid search and both `kernel_quality` and `generalization`
@@ -28,9 +63,13 @@ def _plot_kq_gen_combined(param_names, summary_stats, exp_path):
     if not kq_pairs or not gen_pairs:
         return set()
 
-    x_kq = np.array([list(pv)[0] for pv, _ in kq_pairs], dtype=float)
+    # Use encoding helper
+    x_kq_encoded, x_kq_map, x_kq_labels = _encode_params(kq_pairs, 1)
+    x_kq = x_kq_encoded[:, 0]
     y_kq = np.array([score for _, score in kq_pairs], dtype=float)
-    x_gen = np.array([list(pv)[0] for pv, _ in gen_pairs], dtype=float)
+    
+    x_gen_encoded, x_gen_map, x_gen_labels = _encode_params(gen_pairs, 1)
+    x_gen = x_gen_encoded[:, 0]
     y_gen = np.array([score for _, score in gen_pairs], dtype=float)
 
     order_kq = np.argsort(x_kq)
@@ -41,6 +80,11 @@ def _plot_kq_gen_combined(param_names, summary_stats, exp_path):
     plt.figure()
     plt.plot(x_kq, y_kq, marker="o", label="Kernel Quality", linewidth=2)
     plt.plot(x_gen, y_gen, marker="s", label="Generalization", linewidth=2)
+    
+    # Handle categorical x-axis
+    if x_kq_labels[0] is not None:
+        plt.xticks(range(len(x_kq_labels[0])), x_kq_labels[0])
+    
     plt.xlabel(display_name)
     plt.ylabel("Score")
     plt.title("Kernel Quality vs Generalization")
@@ -88,7 +132,8 @@ def _plot_scalar_gridsearch_results(
             print(f"No results with {metric_label} <= {filter_threshold} to plot")
             return
 
-    params_array = np.array([list(pv) for pv, _ in results], dtype=float)
+    # Use encoding helper to handle mixed types
+    params_array, axis_mappings, axis_tick_labels = _encode_params(results, num_params)
     score_array = np.array([score for _, score in results], dtype=float)
 
     suffix_part = ""
@@ -105,6 +150,11 @@ def _plot_scalar_gridsearch_results(
 
         plt.figure()
         plt.plot(x, y, marker="o")
+        
+        # Handle categorical x-axis
+        if axis_tick_labels[0] is not None:
+             plt.xticks(range(len(axis_tick_labels[0])), axis_tick_labels[0])
+
         plt.xlabel(display_names[0])
         plt.ylabel(metric_label)
         plt.title(f"Grid Search Performance ({metric_label})")
@@ -134,29 +184,76 @@ def _plot_scalar_gridsearch_results(
     if num_params == 2:
         x, y = params_array[:, 0], params_array[:, 1]
         z = c = score_array
-        scene = dict(xaxis_title=display_names[0], yaxis_title=display_names[1], zaxis_title=metric_label)
+        
+        # Update axis configuration for categorical data
+        xaxis = dict(title=display_names[0])
+        yaxis = dict(title=display_names[1])
+        
+        if axis_tick_labels[0] is not None:
+            xaxis.update(dict(
+                tickmode='array',
+                tickvals=list(range(len(axis_tick_labels[0]))),
+                ticktext=axis_tick_labels[0]
+            ))
+            
+        if axis_tick_labels[1] is not None:
+            yaxis.update(dict(
+                tickmode='array',
+                tickvals=list(range(len(axis_tick_labels[1]))),
+                ticktext=axis_tick_labels[1]
+            ))
+
+        scene = dict(xaxis=xaxis, yaxis=yaxis, zaxis=dict(title=metric_label))
         title_text = f"Grid Search Performance ({metric_label})"
     else:  # 3 or more params
         x, y, z = params_array[:, 0], params_array[:, 1], params_array[:, 2]
         c = score_array
-        scene = dict(xaxis_title=display_names[0], yaxis_title=display_names[1], zaxis_title=display_names[2])
+        
+        xaxis = dict(title=display_names[0])
+        yaxis = dict(title=display_names[1])
+        zaxis = dict(title=display_names[2])
+        
+        if axis_tick_labels[0] is not None:
+            xaxis.update(dict(tickmode='array', tickvals=list(range(len(axis_tick_labels[0]))), ticktext=axis_tick_labels[0]))
+        if axis_tick_labels[1] is not None:
+            yaxis.update(dict(tickmode='array', tickvals=list(range(len(axis_tick_labels[1]))), ticktext=axis_tick_labels[1]))
+        if axis_tick_labels[2] is not None:
+            zaxis.update(dict(tickmode='array', tickvals=list(range(len(axis_tick_labels[2]))), ticktext=axis_tick_labels[2]))
+
+        scene = dict(xaxis=xaxis, yaxis=yaxis, zaxis=zaxis)
         title_text = f"Grid Search Performance (color = {metric_label})"
         if num_params > 3:
             title_text = f"Grid Search (>3 params) projected to first 3 (color = {metric_label})"
 
-    if num_params == 2:
-        hovertemplate = (
-            f"{display_names[0]}: %{{x}}<br>"
-            f"{display_names[1]}: %{{y}}<br>"
-            f"{metric_label}: %{{z:.4f}}<extra></extra>"
-        )
-    else:
-        hovertemplate = (
-            f"{display_names[0]}: %{{x}}<br>"
-            f"{display_names[1]}: %{{y}}<br>"
-            f"{display_names[2]}: %{{z}}<br>"
-            f"{metric_label}: %{{customdata:.4f}}<extra></extra>"
-        )
+    # Helper to format hover text
+    def format_val(val, idx):
+        if axis_tick_labels[idx] is not None:
+            # Map back from integer index to string label
+            # Nearest integer
+            i_val = int(round(val))
+            if 0 <= i_val < len(axis_tick_labels[idx]):
+                return axis_tick_labels[idx][i_val]
+            return str(val)
+        return f"{val}" # Numeric
+
+    # We need custom hover data because simple %{x} will show the integer index
+    # But Plotly's hovertemplate with 'array' tickmode usually shows the label automatically for axes.
+    # However, for 3D scatter, it might show the coordinate. 
+    # Let's rely on Plotly's behavior first, or we could construct a custom text array.
+    
+    # Construct custom text for hover to ensure labels are shown
+    hover_texts = []
+    for i in range(len(x)):
+        x_str = format_val(x[i], 0)
+        y_str = format_val(y[i], 1)
+        
+        if num_params == 2:
+            z_val = z[i]
+            hover_texts.append(f"{display_names[0]}: {x_str}<br>{display_names[1]}: {y_str}<br>{metric_label}: {z_val:.4f}")
+        else:
+            z_str = format_val(z[i], 2)
+            c_val = c[i]
+            hover_texts.append(f"{display_names[0]}: {x_str}<br>{display_names[1]}: {y_str}<br>{display_names[2]}: {z_str}<br>{metric_label}: {c_val:.4f}")
 
     fig = go.Figure()
 
@@ -183,7 +280,7 @@ def _plot_scalar_gridsearch_results(
                     colorbar=dict(title=metric_label, len=0.6, x=-0.15),
                     showscale=True,
                     opacity=0.8,
-                    hovertemplate=hovertemplate,
+                    hovertemplate=f"{display_names[0]}: %{{x}}<br>{display_names[1]}: %{{y}}<br>{metric_label}: %{{z:.4f}}<extra></extra>",
                 )
             )
 
@@ -193,8 +290,8 @@ def _plot_scalar_gridsearch_results(
                 y=y,
                 z=z,
                 mode="markers",
-                customdata=c,
-                hovertemplate=hovertemplate,
+                text=hover_texts,
+                hoverinfo="text", 
                 marker=dict(
                     size=4,
                     color=c,
@@ -213,8 +310,8 @@ def _plot_scalar_gridsearch_results(
                 y=y,
                 z=z,
                 mode="markers",
-                customdata=c,
-                hovertemplate=hovertemplate,
+                text=hover_texts,
+                hoverinfo="text",
                 marker=dict(
                     size=5,
                     color=c,
@@ -336,25 +433,29 @@ def plot_decile_statistics(param_names, decile_stats, exp_path, stat_key, stat_l
         return
     
     # Prepare data: (param1, param2, decile, stat_value)
-    data_points = []
-    for param_tuple, decile_values in decile_stats.items():
-        if len(param_names) == 1:
-            x_val = param_tuple[0]
-            y_val = None
-        else:
-            x_val = param_tuple[0]
-            y_val = param_tuple[1]
-        
-        for decile_idx, stat_value in enumerate(decile_values):
-            if len(param_names) == 1:
-                # 2D plot: param vs decile
-                data_points.append((x_val, decile_idx, stat_value))
-            else:
-                # 3D plot: param1, param2, decile
-                data_points.append((x_val, y_val, decile_idx, stat_value))
+    # We need to flatten this and then encode parameters if necessary
     
-    if not data_points:
+    flat_data = []
+    for param_tuple, decile_values in decile_stats.items():
+         for decile_idx, stat_value in enumerate(decile_values):
+             flat_data.append((param_tuple, decile_idx, stat_value))
+             
+    if not flat_data:
         return
+
+    # Extract param tuples for encoding
+    param_tuples = [item[0] for item in flat_data]
+    # Encode
+    encoded_params, axis_mappings, axis_tick_labels = _encode_params([(pt, 0) for pt in param_tuples], len(param_names))
+    
+    data_points = []
+    for i, (_, decile_idx, stat_value) in enumerate(flat_data):
+        # Reconstruct data points with encoded values
+        # Encoded params + decile + stat
+        if len(param_names) == 1:
+             data_points.append((encoded_params[i, 0], decile_idx, stat_value))
+        else:
+             data_points.append((encoded_params[i, 0], encoded_params[i, 1], decile_idx, stat_value))
     
     # Create colorscale
     plasma_colors = px.colors.sequential.Plasma
@@ -385,6 +486,14 @@ def plot_decile_statistics(param_names, decile_stats, exp_path, stat_key, stat_l
                 if (float(xv), int(yv)) in index_map:
                     z_grid[j, i] = index_map[(float(xv), int(yv))]
         
+        xaxis = dict(title=display_names[0])
+        if axis_tick_labels[0] is not None:
+             xaxis.update(dict(
+                tickmode='array',
+                tickvals=list(range(len(axis_tick_labels[0]))),
+                ticktext=axis_tick_labels[0]
+            ))
+
         # Add surface if we have valid values
         if np.isfinite(z_grid).sum() >= 4:
             fig.add_trace(go.Surface(
@@ -424,9 +533,9 @@ def plot_decile_statistics(param_names, decile_stats, exp_path, stat_key, stat_l
         ))
         
         scene = dict(
-            xaxis_title=display_names[0],
-            yaxis_title="Decile",
-            zaxis_title=stat_label
+            xaxis=xaxis,
+            yaxis=dict(title="Decile"),
+            zaxis=dict(title=stat_label)
         )
         title_text = f'Decile Statistics: {stat_label}'
     else:
@@ -434,6 +543,22 @@ def plot_decile_statistics(param_names, decile_stats, exp_path, stat_key, stat_l
         x, y, z, c = zip(*data_points)
         c_min, c_max = min(c), max(c)
         
+        xaxis = dict(title=display_names[0])
+        yaxis = dict(title=display_names[1])
+        
+        if axis_tick_labels[0] is not None:
+             xaxis.update(dict(
+                tickmode='array',
+                tickvals=list(range(len(axis_tick_labels[0]))),
+                ticktext=axis_tick_labels[0]
+            ))
+        if axis_tick_labels[1] is not None:
+             yaxis.update(dict(
+                tickmode='array',
+                tickvals=list(range(len(axis_tick_labels[1]))),
+                ticktext=axis_tick_labels[1]
+            ))
+
         fig.add_trace(go.Scatter3d(
             x=list(x), y=list(y), z=list(z), mode='markers',
             customdata=list(c),
@@ -455,9 +580,9 @@ def plot_decile_statistics(param_names, decile_stats, exp_path, stat_key, stat_l
         ))
         
         scene = dict(
-            xaxis_title=display_names[0],
-            yaxis_title=display_names[1],
-            zaxis_title="Decile"
+            xaxis=xaxis,
+            yaxis=yaxis,
+            zaxis=dict(title="Decile")
         )
         title_text = f'Decile Statistics: {stat_label} (color)'
     
@@ -473,5 +598,3 @@ def plot_decile_statistics(param_names, decile_stats, exp_path, stat_key, stat_l
     
     fig.write_html(filename)
     print(f"Decile plot saved to {filename}")
-
-
