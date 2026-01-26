@@ -19,7 +19,7 @@ esn:
   readout:
     name: Ridge
     args:
-      alpha: 0
+      alpha: 0.0
   W_args:
     size: 400
     W_in_args:
@@ -30,7 +30,7 @@ esn:
       self_connection: 0.0
       directed_edges_fraction: 0.9
       directed_edges_weights: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-      sign_frac: 0.0
+      sign_frac: 0.5
       weights_distribution: constant # constant, random, custom
       neighborhood: Moore # Von_Neumann, Moore
       

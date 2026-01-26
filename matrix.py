@@ -38,7 +38,7 @@ class Matrix:
             self.G_res = self.rectangular(m, n, neighborhood=self.W_res_args["neighborhood"])
             self.G_res = self._make_weights_negative(self.G_res, self.W_res_args["sign_frac"])
 
-            self.G_res = self._make_graph_directed(self.G_res, self.W_res_args["directed_edges_fraction"])
+            self.G_res = self._make_graph_directed(self.G_res, self.W_res_args["directed_edges_fraction"], self.W_res_args["directed_edges_weights"])
             self._self_connection(self.G_res)
             W_res = nx.to_numpy_array(self.G_res)
             return torch.FloatTensor(W_res)
@@ -80,7 +80,14 @@ class Matrix:
             G.nodes[n]['pos'] = (pos[0], pos[1])
 
         for u, v, d in G.edges(data=True):
-            d['weight'] = 1#/euclidean(G.nodes[u]['pos'], G.nodes[v]['pos'])
+            if self.W_res_args["weights_distribution"] == "constant":
+                d['weight'] = 1
+            elif self.W_res_args["weights_distribution"] == "random":
+                d['weight'] = np.random.random()
+            elif self.W_res_args["weights_distribution"] == "custom":
+                d['weight'] = 1 
+            else:
+                d['weight'] = 1
 
         return G
 
@@ -90,14 +97,15 @@ class Matrix:
             G.add_edge(n, n, weight=weight)
         return G
     
-    def _make_graph_directed(self, G, dir_frac):
+    def _make_graph_directed(self, G, dir_frac, dir_weights):
         bidir_edges = G.edges()
         dir_G =  G.to_directed()
 
         for u,v in bidir_edges:
             if np.random.random() < dir_frac:
                 del_u, del_v = (u,v) if np.random.random() < 0.5 else (v,u)
-                dir_G.remove_edge(del_u, del_v)
+                dir_G.edges[del_u, del_v]['weight'] *= dir_weights
+            
 
         return dir_G
     
@@ -108,7 +116,7 @@ class Matrix:
         return G
 
 if __name__ == "__main__":
-    matrix = Matrix({"size": 16, "W_in_args": {"input_scale": 1, "distribution": "uniform"}, "W_res_args": {"self_connection": 1.0, "directed": 0.0, "sign_frac": 0.0, "lattice": True, "neighborhood": "Moore"}})
+    matrix = Matrix({"size": 16, "W_in_args": {"input_scale": 1, "distribution": "uniform"}, "W_res_args": {"self_connection": 0, "sign_frac": 0.5, "lattice": True, "neighborhood": "Moore", "weights_distribution": "random", "directed_edges_weights": 0.5, "directed_edges_fraction": 1}})
     pos = nx.spring_layout(matrix.G_res)
     nx.draw(matrix.G_res, pos=pos, with_labels=True, arrows=True)
     edge_labels = nx.get_edge_attributes(matrix.G_res, "weight")

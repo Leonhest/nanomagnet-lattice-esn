@@ -1,7 +1,7 @@
 from runner.grid_search import main
 import sys
 
-DEFAULT_EXP_PATH = "./experiments/neigborhood/"
+DEFAULT_EXP_PATH = "./experiments/weight_distribution/dir_frac/"
 
 
 if __name__ == "__main__":
