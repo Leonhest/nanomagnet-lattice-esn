@@ -33,13 +33,30 @@ def calculate_total_recurrent_influence(W_res):
     n_reservoir = W_res.shape[0]
     I = np.identity(n_reservoir)
 
+    avg_degree = calculate_avg_degree(W_res)
+
     try:
-        S = np.linalg.inv(I - W_res) - I
+        #S = W_res @ np.linalg.inv(I - W_res)
+        S = avg_degree*W_res @ np.linalg.inv(I*avg_degree - W_res)
         
         total_recurrent_influence = np.diag(S)
-        
+
         return total_recurrent_influence
 
     except np.linalg.LinAlgError:
         print("Error: The matrix (I - W_res) is singular and cannot be inverted.")
         return np.full(n_reservoir, np.nan)
+
+def calculate_avg_degree(W_res):
+    """
+    Calculates the average number of incoming edges (in-degree) for all nodes in the reservoir.
+
+    Args:
+        W_res (np.ndarray): The reservoir adjacency matrix.
+
+    Returns:
+        float: The average in-degree of the graph.
+    """
+    # Count non-zero elements in each column (incoming edges)
+    in_degrees = np.count_nonzero(W_res, axis=0)
+    return np.mean(in_degrees)
