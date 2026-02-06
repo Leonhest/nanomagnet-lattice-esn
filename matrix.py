@@ -1,3 +1,4 @@
+import json
 import torch
 import networkx as nx
 from math import sqrt
@@ -10,6 +11,99 @@ def euclidean(x, y):
     The euclidean distance metric that is used within NetworkX.
     """
     return sqrt(sum((a - b) ** 2 for a, b in zip(x, y)))
+
+def save_tile(tile_G, path, metadata=None):
+    """Save a tile graph as JSON (edge list + metadata)."""
+    data = {
+        "nodes": list(tile_G.nodes()),
+        "edges": [
+            {"src": _node_to_json(u), "dst": _node_to_json(v), "weight": d["weight"]}
+            for u, v, d in tile_G.edges(data=True)
+        ],
+    }
+    if metadata:
+        data["metadata"] = metadata
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def load_tile(path):
+    """Load a tile graph from JSON."""
+    tile_G, _ = load_tile_with_metadata(path)
+    return tile_G
+
+
+def load_tile_with_metadata(path):
+    """Load a tile graph and its metadata from JSON."""
+    with open(path, "r") as f:
+        data = json.load(f)
+
+    tile_G = nx.DiGraph()
+    for node in data["nodes"]:
+        tile_G.add_node(_node_from_json(node))
+    for edge in data["edges"]:
+        tile_G.add_edge(
+            _node_from_json(edge["src"]),
+            _node_from_json(edge["dst"]),
+            weight=edge["weight"],
+        )
+    return tile_G, data.get("metadata", {})
+
+
+def _tile_edges_to_lattice(tile_G, tile_rows, tile_cols, m, n):
+    """Replicate tile edges across a lattice grid with periodic wrapping."""
+    G = nx.DiGraph()
+    for r in range(m):
+        for c in range(n):
+            G.add_node((r, c))
+
+    for u, v, d in tile_G.edges(data=True):
+        dr = v[0] - u[0]
+        dc = v[1] - u[1]
+        if abs(dr) > tile_rows // 2:
+            dr = dr - tile_rows if dr > 0 else dr + tile_rows
+        if abs(dc) > tile_cols // 2:
+            dc = dc - tile_cols if dc > 0 else dc + tile_cols
+        for r in range(m):
+            for c in range(n):
+                if (r % tile_rows, c % tile_cols) == (u[0] % tile_rows, u[1] % tile_cols):
+                    tr = r + dr
+                    tc = c + dc
+                    if 0 <= tr < m and 0 <= tc < n:
+                        G.add_edge((r, c), (tr, tc), weight=d["weight"])
+
+    return G
+
+
+def tile_to_lattice(tile_G, tile_shape, lattice_size=36):
+    """Tile a directed tile graph onto a full lattice.
+
+    Standalone version of Matrix._tile_from_graph for use outside the class.
+    """
+    tile_rows, tile_cols = tile_shape
+    m = int(sqrt(lattice_size))
+    n = int(sqrt(lattice_size))
+    return _tile_edges_to_lattice(tile_G, tile_rows, tile_cols, m, n)
+
+
+def _is_tile_path(value):
+    """Check if a weights_distribution value is a file path to a saved tile."""
+    return isinstance(value, str) and value.endswith(".json")
+
+
+def _node_to_json(node):
+    """Convert a node (int or tuple) to a JSON-serializable form."""
+    if isinstance(node, tuple):
+        return list(node)
+    return node
+
+
+def _node_from_json(node):
+    """Convert a JSON-deserialized node back to its original type."""
+    if isinstance(node, list):
+        return tuple(node)
+    return node
+
 
 class Matrix:
     def __init__(self, conf):
@@ -36,7 +130,13 @@ class Matrix:
             m = int(sqrt(self.size))
             n = int(sqrt(self.size))
             
-            if self.W_res_args["weights_distribution"] == "tile":
+            wd = self.W_res_args["weights_distribution"]
+            if _is_tile_path(wd):
+                tile_conf = self.W_res_args["tile"]
+                tile_rows, tile_cols = tile_conf["shape"]
+                tile_G, tile_meta = load_tile_with_metadata(wd)
+                self.G_res = self._tile_from_graph(tile_G, m, n, tile_rows, tile_cols)
+            elif wd == "tile":
                 self.G_res = self.tiled_rectangular(m, n)
             else:
                 self.G_res = self.rectangular(m, n, neighborhood=self.W_res_args["neighborhood"])
@@ -59,7 +159,7 @@ class Matrix:
 
         # Build periodic tile so all possible neighbor offsets have defined weights
         tile_G = self.tetragonal([tile_rows, tile_cols], periodic=True, neighborhood=neighborhood)
-        if tile_conf["method"] == "random":
+        if tile_conf.get("method") == "random":
             for u, v, d in tile_G.edges(data=True):
                 d['weight'] = np.random.random()
 
@@ -87,6 +187,36 @@ class Matrix:
                 d['weight'] = 0  # Fallback; should not happen with periodic tile
 
         return G
+
+    def _tile_from_graph(self, tile_G, m, n, tile_rows, tile_cols):
+        """Tile a pre-built directed tile graph onto the full lattice."""
+        return _tile_edges_to_lattice(tile_G, tile_rows, tile_cols, m, n)
+
+    @classmethod
+    def from_tile(cls, tile_G, W_args):
+        """Build a Matrix from a pre-built tile nx.DiGraph with weight attributes.
+
+        Bypasses the normal __init__ to directly tile the given graph onto the
+        full reservoir lattice. sign_frac/directed_edges are skipped since the
+        tile already has them baked in.
+        """
+        obj = cls.__new__(cls)
+        obj.size = W_args["size"]
+        obj.W_in_args = W_args["W_in_args"]
+        obj.W_res_args = W_args["W_res_args"]
+        obj.W_in = obj._init_W_in()
+
+        m = int(sqrt(obj.size))
+        n = int(sqrt(obj.size))
+        tile_conf = obj.W_res_args["tile"]
+        tile_rows, tile_cols = tile_conf["shape"]
+
+        obj.G_res = obj._tile_from_graph(tile_G, m, n, tile_rows, tile_cols)
+        obj._self_connection(obj.G_res)
+        W_res = nx.to_numpy_array(obj.G_res)
+        obj.W_res = torch.FloatTensor(W_res)
+
+        return obj
 
 
     def tetragonal(self, dim, periodic=False, neighborhood="Von_Neumann", dist_function=None):
@@ -155,27 +285,119 @@ class Matrix:
             d['weight'] = d['weight']*sign if 'weight' in d else sign
         return G
 
-if __name__ == "__main__":
-    matrix = Matrix({
-        "size": 36,
-        "W_in_args": {"input_scale": 1, "distribution": "uniform"},
-        "W_res_args": {
-            "self_connection": 0.0,
-            "sign_frac": 0.5,
-            "lattice": True,
-            "neighborhood": "Moore",
-            "weights_distribution": "tile",
-            "directed_edges_weights": 0.0,
-            "directed_edges_fraction": 0.5,
-            "tile": {"shape": [3, 3], "method": "random"},
-        },
-    })
+def plot_tile(tile_G, title="Tile graph", save_path=None, show=True):
+    """Visualize a tile graph with ghost padding nodes for periodic edges.
 
-    G = matrix.G_res
-    # Use grid positions so the lattice structure is visible
+    Wrapping edges are drawn to ghost nodes in a padding layer around the tile,
+    making the periodic structure clear without chaotic cross-tile arcs.
+    """
+    if tile_G.number_of_edges() == 0:
+        print("Tile has no edges to plot.")
+        return
+
+    tile_nodes = list(tile_G.nodes())
+    rows = sorted(set(n[0] for n in tile_nodes))
+    cols = sorted(set(n[1] for n in tile_nodes))
+    tile_rows = len(rows)
+    tile_cols = len(cols)
+
+    # Build a display graph with ghost nodes for wrapping edges
+    display_G = nx.DiGraph()
+    for node in tile_nodes:
+        display_G.add_node(node, ghost=False)
+
+    ghost_id = 0
+    ghost_nodes = set()
+
+    for u, v, d in tile_G.edges(data=True):
+        dr_raw = v[0] - u[0]
+        dc_raw = v[1] - u[1]
+        dr = dr_raw
+        dc = dc_raw
+        if abs(dr) > tile_rows // 2:
+            dr = dr - tile_rows if dr > 0 else dr + tile_rows
+        if abs(dc) > tile_cols // 2:
+            dc = dc - tile_cols if dc > 0 else dc + tile_cols
+
+        if dr == dr_raw and dc == dc_raw:
+            # Normal edge — draw directly
+            display_G.add_edge(u, v, weight=d["weight"])
+        else:
+            # Wrapping edge — draw to a ghost node at the unwrapped position
+            ghost_pos = (u[0] + dr, u[1] + dc)
+            ghost_key = f"g{ghost_id}"
+            ghost_id += 1
+            display_G.add_node(ghost_key, ghost=True, display_pos=ghost_pos)
+            display_G.add_edge(u, ghost_key, weight=d["weight"])
+            ghost_nodes.add(ghost_key)
+
+    # Positions: real nodes at grid coords, ghost nodes at their unwrapped positions
+    pos = {}
+    for node in display_G.nodes():
+        if display_G.nodes[node].get("ghost"):
+            gp = display_G.nodes[node]["display_pos"]
+            pos[node] = (gp[1], -gp[0])
+        else:
+            pos[node] = (node[1], -node[0])
+
+    # Separate real and ghost node lists
+    real_nodes = [n for n in display_G.nodes() if not display_G.nodes[n].get("ghost")]
+    ghost_list = [n for n in display_G.nodes() if display_G.nodes[n].get("ghost")]
+
+    # Edge colors
+    edge_weights = [round(d['weight'], 4) for _, _, d in display_G.edges(data=True)]
+    w_arr = np.array(edge_weights)
+    w_max = max(abs(w_arr.min()), abs(w_arr.max())) or 1.0
+    norm = plt.Normalize(vmin=-w_max, vmax=w_max)
+    cmap = plt.cm.RdBu_r
+    edge_colors = [cmap(norm(w)) for w in edge_weights]
+
+    fig, ax = plt.subplots(figsize=(7, 7))
+
+    # Draw real nodes
+    nx.draw_networkx_nodes(display_G, pos=pos, nodelist=real_nodes, ax=ax,
+                           node_size=400, node_color="lightgray", edgecolors="black")
+    nx.draw_networkx_labels(display_G, pos=pos, labels={n: str(n) for n in real_nodes},
+                            ax=ax, font_size=9)
+
+    # Draw ghost nodes (smaller, faded)
+    if ghost_list:
+        nx.draw_networkx_nodes(display_G, pos=pos, nodelist=ghost_list, ax=ax,
+                               node_size=200, node_color="white", edgecolors="gray",
+                               alpha=0.5, node_shape="s")
+
+    # Draw edges
+    nx.draw_networkx_edges(
+        display_G, pos=pos, ax=ax, edge_color=edge_colors, width=2,
+        connectionstyle="arc3,rad=0.1", arrows=True, arrowsize=12,
+    )
+
+    # Edge weight labels
+    edge_labels = {(u, v): f"{d['weight']:.3f}" for u, v, d in display_G.edges(data=True)}
+    nx.draw_networkx_edge_labels(display_G, pos=pos, edge_labels=edge_labels, ax=ax, font_size=6)
+
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    fig.colorbar(sm, ax=ax, label="Edge weight", shrink=0.8)
+
+    ax.set_title(title)
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300)
+
+    if show:
+        plt.show()
+    else:
+        plt.close()
+
+
+def plot_lattice(G, title="Tiled lattice reservoir", save_path=None, show=True):
+    """Visualize a full lattice reservoir graph with edges colored by unique weight."""
+    from matplotlib.lines import Line2D
+
     pos = {node: (node[1], -node[0]) for node in G.nodes()}
 
-    # Assign a color to each unique weight (rounded to avoid float noise)
     edge_weights = [round(d['weight'], 6) for _, _, d in G.edges(data=True)]
     unique_weights = sorted(set(edge_weights))
     cmap = plt.cm.get_cmap("tab20", len(unique_weights))
@@ -190,15 +412,55 @@ if __name__ == "__main__":
         connectionstyle="arc3,rad=0.15", arrows=True, arrowsize=15,
     )
 
-    # Legend mapping colors to weights
-    from matplotlib.lines import Line2D
     legend_handles = [
         Line2D([0], [0], color=weight_to_color[w], lw=2, label=f"{w:.3f}")
         for w in unique_weights
     ]
     ax.legend(handles=legend_handles, title="Edge weight", loc="upper left", fontsize=7)
 
-    plt.title("Tiled lattice reservoir")
+    ax.set_title(title)
     plt.tight_layout()
-    plt.show()
-    
+
+    if save_path:
+        plt.savefig(save_path, dpi=300)
+
+    if show:
+        plt.show()
+    else:
+        plt.close()
+
+
+if __name__ == "__main__":
+    import sys
+
+    # python matrix.py                          → visualize a random tiled lattice
+    # python matrix.py tile.json                → visualize the tile only
+    # python matrix.py tile.json --lattice      → tile onto full lattice and visualize
+    args = sys.argv[1:]
+    json_path = next((a for a in args if a.endswith(".json")), None)
+    show_lattice = "--lattice" in args
+
+    if json_path and show_lattice:
+        tile_G, meta = load_tile_with_metadata(json_path)
+        tile_shape = meta.get("tile_shape", [3, 3])
+        lattice_G = tile_to_lattice(tile_G, tile_shape, lattice_size=36)
+        plot_lattice(lattice_G, title=f"Lattice from {json_path}")
+    elif json_path:
+        tile_G = load_tile(json_path)
+        plot_tile(tile_G, title=f"Tile: {json_path}")
+    else:
+        matrix = Matrix({
+            "size": 36,
+            "W_in_args": {"input_scale": 1, "distribution": "uniform"},
+            "W_res_args": {
+                "self_connection": 0.0,
+                "sign_frac": 0.5,
+                "lattice": True,
+                "neighborhood": "Moore",
+                "weights_distribution": "tile",
+                "directed_edges_weights": 0.0,
+                "directed_edges_fraction": 0.5,
+                "tile": {"shape": [3, 3], "method": "random"},
+            },
+        })
+        plot_lattice(matrix.G_res)

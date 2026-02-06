@@ -1,7 +1,17 @@
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
+
+
+def _display_label(val):
+    """Shorten file paths to their parent folder name for plot labels."""
+    if isinstance(val, str) and '/' in val and '.' in os.path.basename(val):
+        return os.path.basename(os.path.dirname(val))
+    return val
+
 
 def _encode_params(results, num_params):
     """
@@ -33,7 +43,7 @@ def _encode_params(results, num_params):
             col_encoded = np.array([val_to_idx[v] for v in col_values], dtype=float)
             encoded_cols.append(col_encoded)
             axis_mappings.append(val_to_idx)
-            axis_tick_labels.append(unique_vals)
+            axis_tick_labels.append([_display_label(v) for v in unique_vals])
 
     encoded_array = np.column_stack(encoded_cols)
     return encoded_array, axis_mappings, axis_tick_labels

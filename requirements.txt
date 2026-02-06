@@ -1,4 +1,6 @@
+cma
 matplotlib==3.10.7
+neat-python
 networkx==3.4.2
 numpy==2.3.4
 PyYAML==6.0.3

@@ -66,7 +66,12 @@ class ConfigLoader():
         raise ValueError("Config file was not found in provided experiment folder")
     
     # Keys whose list values are structural (not grid search dimensions)
-    _grid_search_exclude = {"esn.W_args.W_res_args.tile.shape"}
+    _grid_search_exclude = {
+        "esn.W_args.W_res_args.tile.shape",
+        "optimization.cmaes.bounds",
+        "optimization.hyperneat.substrate_shape",
+        "optimization.hyperneat.substrate_coords",
+    }
 
     @staticmethod
     def _find_list_parameters(config, prefix="", result=None):
