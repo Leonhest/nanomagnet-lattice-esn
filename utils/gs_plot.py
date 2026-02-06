@@ -55,6 +55,35 @@ def _plot_1d(x, y, tick_labels, x_label, y_label, title, filepath):
     plt.close()
 
 
+def _select_line_group(results):
+    """
+    Decide which of 2 params should be the line group vs x-axis.
+
+    Categorical params (those with tick_labels from _encode_column) become line
+    groups over numeric params. If both are the same type, the param with fewer
+    unique values becomes the line group.
+
+    Returns:
+        (group_idx, x_idx, unique_counts)
+    """
+    raw = [[list(pv)[i] for pv, _ in results] for i in range(2)]
+    unique_counts = [len(set(col)) for col in raw]
+    _, ticks0 = _encode_column(raw[0])
+    _, ticks1 = _encode_column(raw[1])
+    is_cat = [ticks0 is not None, ticks1 is not None]
+
+    if is_cat[0] and not is_cat[1]:
+        group_idx, x_idx = 0, 1
+    elif is_cat[1] and not is_cat[0]:
+        group_idx, x_idx = 1, 0
+    elif unique_counts[0] <= unique_counts[1]:
+        group_idx, x_idx = 0, 1
+    else:
+        group_idx, x_idx = 1, 0
+
+    return group_idx, x_idx, unique_counts
+
+
 def _plot_2d_heatmap(param_names, results, exp_path, metric_label, suffix):
     """
     Plot a 2D heatmap: param_names[0] on x-axis, param_names[1] on y-axis,
@@ -110,19 +139,19 @@ def _plot_2d_heatmap(param_names, results, exp_path, metric_label, suffix):
     plt.close()
 
 
-def _plot_2d_lines(param_names, results, exp_path, metric_label, suffix):
+def _plot_2d_lines(param_names, results, exp_path, metric_label, suffix, *, max_groups=5):
     """
-    Plot overlaid lines. The param with fewer unique values becomes the line
-    groups (legend); the other becomes the x-axis. Saved as PNG.
+    Plot overlaid lines. Uses _select_line_group to pick the line group
+    (categorical preferred) vs x-axis. Skips if line group has more than
+    max_groups unique values. Saved as PNG.
     """
     display_names = [n.split(".")[-1] for n in param_names]
 
-    # Determine which param has fewer unique values — use that for lines
-    unique_counts = [len(set(list(pv)[i] for pv, _ in results)) for i in range(2)]
-    if unique_counts[0] <= unique_counts[1]:
-        group_idx, x_idx = 0, 1
-    else:
-        group_idx, x_idx = 1, 0
+    group_idx, x_idx, unique_counts = _select_line_group(results)
+    if unique_counts[group_idx] > max_groups:
+        print(f"Skipping line plot for {' vs '.join(display_names)}: "
+              f"{display_names[group_idx]} has {unique_counts[group_idx]} groups (max {max_groups})")
+        return
 
     groups = defaultdict(list)
     for pv, score in results:
@@ -301,6 +330,184 @@ def _plot_kq_gen_combined(param_names, summary_stats, exp_path):
     return {"kernel_quality", "generalization"}
 
 
+def _plot_2d_kq_gen_heatmap(param_names, kq_results, gen_results, exp_path):
+    """
+    1x3 subplot heatmap: KQ, Gen, and KQ-Gen side by side.
+    Each cell annotated with its own value only.
+    """
+    display_names = [n.split(".")[-1] for n in param_names]
+
+    raw_x_kq = [list(pv)[0] for pv, _ in kq_results]
+    raw_y_kq = [list(pv)[1] for pv, _ in kq_results]
+    scores_kq = {(list(pv)[0], list(pv)[1]): s for pv, s in kq_results}
+    scores_gen = {(list(pv)[0], list(pv)[1]): s for pv, s in gen_results}
+
+    x_enc, x_ticks = _encode_column(raw_x_kq)
+    y_enc, y_ticks = _encode_column(raw_y_kq)
+    x_unique = np.unique(x_enc)
+    y_unique = np.unique(y_enc)
+
+    raw_x_vals = [list(pv)[0] for pv, _ in kq_results]
+    raw_y_vals = [list(pv)[1] for pv, _ in kq_results]
+    x_enc_to_raw = {}
+    for xe, xr in zip(x_enc, raw_x_vals):
+        x_enc_to_raw[xe] = xr
+    y_enc_to_raw = {}
+    for ye, yr in zip(y_enc, raw_y_vals):
+        y_enc_to_raw[ye] = yr
+
+    grid_kq = np.full((len(y_unique), len(x_unique)), np.nan)
+    grid_gen = np.full((len(y_unique), len(x_unique)), np.nan)
+    grid_diff = np.full((len(y_unique), len(x_unique)), np.nan)
+
+    for j, yu in enumerate(y_unique):
+        for i, xu in enumerate(x_unique):
+            key = (x_enc_to_raw[xu], y_enc_to_raw[yu])
+            kq_val = scores_kq.get(key)
+            gen_val = scores_gen.get(key)
+            if kq_val is not None:
+                grid_kq[j, i] = kq_val
+            if gen_val is not None:
+                grid_gen[j, i] = gen_val
+            if kq_val is not None and gen_val is not None:
+                grid_diff[j, i] = kq_val - gen_val
+
+    x_labels = x_ticks if x_ticks is not None else [f"{v:g}" if v == int(v) else f"{v}" for v in x_unique]
+    y_labels = y_ticks if y_ticks is not None else [f"{v:g}" if v == int(v) else f"{v}" for v in y_unique]
+
+    panels = [
+        (grid_kq, "Kernel Quality"),
+        (grid_gen, "Generalization"),
+        (grid_diff, "KQ - Gen"),
+    ]
+
+    fig, axes = plt.subplots(1, 3, figsize=(max(6, len(x_unique) * 0.8 + 2) * 3, max(5, len(y_unique) * 0.6 + 2)))
+    for ax, (grid, title) in zip(axes, panels):
+        im = ax.imshow(grid, aspect="auto", origin="lower", cmap="plasma")
+        fig.colorbar(im, ax=ax, label=title)
+
+        for j in range(len(y_unique)):
+            for i in range(len(x_unique)):
+                val = grid[j, i]
+                if np.isfinite(val):
+                    ax.text(i, j, f"{val:.4f}", ha="center", va="center", fontsize=7,
+                            color="white" if val < (np.nanmin(grid) + np.nanmax(grid)) / 2 else "black")
+
+        ax.set_xticks(range(len(x_unique)))
+        ax.set_xticklabels(x_labels, rotation=45, ha="right")
+        ax.set_yticks(range(len(y_unique)))
+        ax.set_yticklabels(y_labels)
+        ax.set_xlabel(display_names[0])
+        ax.set_ylabel(display_names[1])
+        ax.set_title(title)
+
+    plt.tight_layout()
+
+    param_str = "_vs_".join(display_names)
+    filename = f"{exp_path}/plot_{param_str}_kq_gen_heatmap.png"
+    plt.savefig(filename, dpi=150)
+    print(f"Plot saved to {filename}")
+    plt.close()
+
+
+def _plot_2d_kq_gen_lines(param_names, kq_results, gen_results, exp_path):
+    """
+    Combined KQ/Gen line plot. KQ lines are solid, Gen lines are dashed.
+    Same color for same param value. Max 3 line group values (6 lines total).
+    """
+    display_names = [n.split(".")[-1] for n in param_names]
+    group_idx, x_idx, unique_counts = _select_line_group(kq_results)
+
+    max_groups = 3
+    if unique_counts[group_idx] > max_groups:
+        print(f"Skipping KQ/Gen line plot: {display_names[group_idx]} has "
+              f"{unique_counts[group_idx]} groups (max {max_groups})")
+        return
+
+    kq_groups = defaultdict(list)
+    for pv, score in kq_results:
+        p = list(pv)
+        kq_groups[p[group_idx]].append((p[x_idx], score))
+
+    gen_groups = defaultdict(list)
+    for pv, score in gen_results:
+        p = list(pv)
+        gen_groups[p[group_idx]].append((p[x_idx], score))
+
+    plt.figure()
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+
+    for i, group_val in enumerate(sorted(kq_groups.keys(), key=lambda v: str(v))):
+        color = colors[i % len(colors)]
+        label_str = _display_label(group_val)
+
+        # KQ line (solid)
+        pairs = kq_groups[group_val]
+        raw_x = [p[0] for p in pairs]
+        scores = [p[1] for p in pairs]
+        x_enc, x_ticks = _encode_column(raw_x)
+        order = np.argsort(x_enc)
+        plt.plot(x_enc[order], np.array(scores)[order], marker="o", linestyle="-",
+                 color=color, label=f"KQ {display_names[group_idx]}={label_str}")
+
+        # Gen line (dashed)
+        if group_val in gen_groups:
+            pairs = gen_groups[group_val]
+            raw_x = [p[0] for p in pairs]
+            scores = [p[1] for p in pairs]
+            x_enc, _ = _encode_column(raw_x)
+            order = np.argsort(x_enc)
+            plt.plot(x_enc[order], np.array(scores)[order], marker="s", linestyle="--",
+                     color=color, label=f"Gen {display_names[group_idx]}={label_str}")
+
+    # Set x ticks from first group
+    first_group = kq_groups[sorted(kq_groups.keys(), key=lambda v: str(v))[0]]
+    _, x_ticks = _encode_column([p[0] for p in first_group])
+    if x_ticks is not None:
+        plt.xticks(range(len(x_ticks)), x_ticks, rotation=45, ha="right")
+
+    plt.xlabel(display_names[x_idx])
+    plt.ylabel("Score")
+    plt.title(f"KQ vs Gen by {display_names[group_idx]}")
+    plt.legend(fontsize="small")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+
+    param_str = "_vs_".join(display_names)
+    filename = f"{exp_path}/plot_{param_str}_kq_gen_lines.png"
+    plt.savefig(filename, dpi=150)
+    print(f"Plot saved to {filename}")
+    plt.close()
+
+
+def _plot_kq_gen_combined_2d(param_names, summary_stats, exp_path):
+    """
+    For 2D grid searches: produce combined KQ/Gen heatmap and line plot.
+    Returns the set of metric keys to skip in the generic per-metric loop.
+    """
+    if len(param_names) != 2:
+        return set()
+
+    kq_results = [
+        (param_tuple, float(stats["kernel_quality"]))
+        for param_tuple, stats in summary_stats.items()
+        if isinstance(param_tuple, tuple) and isinstance(stats, dict) and "kernel_quality" in stats
+    ]
+    gen_results = [
+        (param_tuple, float(stats["generalization"]))
+        for param_tuple, stats in summary_stats.items()
+        if isinstance(param_tuple, tuple) and isinstance(stats, dict) and "generalization" in stats
+    ]
+
+    if not kq_results or not gen_results:
+        return set()
+
+    _plot_2d_kq_gen_heatmap(param_names, kq_results, gen_results, exp_path)
+    _plot_2d_kq_gen_lines(param_names, kq_results, gen_results, exp_path)
+
+    return {"kernel_quality", "generalization"}
+
+
 def plot_gridsearch_results(
     param_names,
     summary_stats,
@@ -338,6 +545,7 @@ def plot_gridsearch_results(
     }
 
     skip_keys = _plot_kq_gen_combined(param_names, summary_stats, exp_path)
+    skip_keys |= _plot_kq_gen_combined_2d(param_names, summary_stats, exp_path)
 
     for stat_key, stat_label in metric_specs.items():
         if stat_key in skip_keys:
