@@ -7,9 +7,12 @@ import plotly.graph_objects as go
 
 
 def _display_label(val):
-    """Shorten file paths to their parent folder name for plot labels."""
+    """Shorten file paths to their filename (without extension) for plot labels."""
     if isinstance(val, str) and '/' in val and '.' in os.path.basename(val):
-        return os.path.basename(os.path.dirname(val))
+        name = os.path.splitext(os.path.basename(val))[0]
+        if name.startswith("best_"):
+            name = name[len("best_"):]
+        return name
     return val
 
 
