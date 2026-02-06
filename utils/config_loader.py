@@ -65,19 +65,22 @@ class ConfigLoader():
                     return os.path.join(root, file)
         raise ValueError("Config file was not found in provided experiment folder")
     
+    # Keys whose list values are structural (not grid search dimensions)
+    _grid_search_exclude = {"esn.W_args.W_res_args.tile.shape"}
+
     @staticmethod
     def _find_list_parameters(config, prefix="", result=None):
         if result is None:
             result = {}
-        
+
         for key, value in config.items():
             current_path = f"{prefix}.{key}" if prefix else key
-            
-            if isinstance(value, list):
+
+            if isinstance(value, list) and current_path not in ConfigLoader._grid_search_exclude:
                 result[current_path] = value
             elif isinstance(value, dict):
                 ConfigLoader._find_list_parameters(value, current_path, result)
-        
+
         return result
     
     @staticmethod
