@@ -3,7 +3,7 @@ import logging
 from metric import kernel_quality, generalization, memory_capacity
 
 from runner.evaluation import train, test
-from runner.reservoir_stats import compute_reservoir_statistics, compute_decile_statistics
+from runner.reservoir_stats import compute_reservoir_statistics
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +24,7 @@ def run(config, exp_path):
     if config.get("state_plot", False):
         model.plot_node_states(num_nodes=10, save_path=exp_path)
 
-    result = {"score": float(test_nrmse), **stats}
-
-    if config.get("plot_deciles", False):
-        result["decile_stats"] = compute_decile_statistics(model, num_deciles=10)
-
-    return result
+    return {"score": float(test_nrmse), **stats}
 
 
 def run_res_metrics(config):

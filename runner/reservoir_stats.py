@@ -44,25 +44,3 @@ def compute_reservoir_statistics(model, states=None):
     }
 
 
-def compute_decile_statistics(model, num_deciles=10):
-    """
-    Split the reservoir states into `num_deciles` chunks over time and compute
-    statistics for each chunk.
-    """
-    if not hasattr(model, "X"):
-        raise RuntimeError("Reservoir states not available for decile computation.")
-
-    states = model.X.detach()
-    num_timesteps = states.shape[0]
-    decile_size = num_timesteps // num_deciles
-
-    decile_stats = []
-    for decile_idx in range(num_deciles):
-        start_idx = decile_idx * decile_size
-        end_idx = (decile_idx + 1) * decile_size if decile_idx < (num_deciles - 1) else num_timesteps
-        decile_states = states[start_idx:end_idx]
-        decile_stats.append(compute_reservoir_statistics(model, states=decile_states))
-
-    return decile_stats
-
-

@@ -40,7 +40,7 @@ There are no tests or linters configured in this project.
 - **`runner/grid_search.py`** — orchestrates grid search: runs configs, aggregates results by parameter combination, generates plots and `reservoir_stats_summary.json`
 - **`runner/single_run.py`** — executes one config: `run()` for NRMSE mode, `run_res_metrics()` for reservoir metrics
 - **`utils/formula.py`** — spectral radius computation, Total Recurrent Influence (TRI) via Neumann series approximation
-- **`utils/gs_plot.py`** — 1D plots as PNG (matplotlib), ≥2D as interactive HTML (plotly)
+- **`utils/gs_plot.py`** — 1D line plots as PNG, 2D heatmap+line plots as PNG (matplotlib), 3D scatter as interactive HTML (plotly)
 
 ### Data flow through ConfigLoader
 
@@ -51,7 +51,6 @@ There are no tests or linters configured in this project.
 - `W_args.size` **must be a perfect square** when `lattice: true` (grid is `sqrt(size) x sqrt(size)`)
 - `data.load: true` expects `.npy` files under `data/datasets/NARMA10/`; set `load: false` to generate them
 - Runs with NRMSE >= 0.8 are filtered out from aggregation/plots
-- `plot_deciles: true` only works with ≤2 grid search parameters
 
 ## Outputs
 
