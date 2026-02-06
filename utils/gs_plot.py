@@ -109,16 +109,22 @@ def _plot_2d_heatmap(param_names, results, exp_path, metric_label, suffix):
 
 def _plot_2d_lines(param_names, results, exp_path, metric_label, suffix):
     """
-    Plot overlaid lines: group by param_names[0], x-axis is param_names[1].
-    One line per group. Saved as PNG.
+    Plot overlaid lines. The param with fewer unique values becomes the line
+    groups (legend); the other becomes the x-axis. Saved as PNG.
     """
     display_names = [n.split(".")[-1] for n in param_names]
 
-    # Group results by first param
+    # Determine which param has fewer unique values — use that for lines
+    unique_counts = [len(set(list(pv)[i] for pv, _ in results)) for i in range(2)]
+    if unique_counts[0] <= unique_counts[1]:
+        group_idx, x_idx = 0, 1
+    else:
+        group_idx, x_idx = 1, 0
+
     groups = defaultdict(list)
     for pv, score in results:
         p = list(pv)
-        groups[p[0]].append((p[1], score))
+        groups[p[group_idx]].append((p[x_idx], score))
 
     plt.figure()
     for group_val in sorted(groups.keys(), key=lambda v: str(v)):
@@ -130,7 +136,7 @@ def _plot_2d_lines(param_names, results, exp_path, metric_label, suffix):
         x_sorted = x_enc[order]
         y_sorted = np.array(scores)[order]
         label = _display_label(group_val)
-        plt.plot(x_sorted, y_sorted, marker="o", label=f"{display_names[0]}={label}")
+        plt.plot(x_sorted, y_sorted, marker="o", label=f"{display_names[group_idx]}={label}")
 
     # Set x ticks using first group's encoding (all groups share the same x values)
     first_group = groups[sorted(groups.keys(), key=lambda v: str(v))[0]]
@@ -138,9 +144,9 @@ def _plot_2d_lines(param_names, results, exp_path, metric_label, suffix):
     if x_ticks is not None:
         plt.xticks(range(len(x_ticks)), x_ticks, rotation=45, ha="right")
 
-    plt.xlabel(display_names[1])
+    plt.xlabel(display_names[x_idx])
     plt.ylabel(metric_label)
-    plt.title(f"{metric_label} by {display_names[0]}")
+    plt.title(f"{metric_label} by {display_names[group_idx]}")
     plt.legend(fontsize="small")
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
