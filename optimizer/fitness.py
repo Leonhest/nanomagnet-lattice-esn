@@ -13,7 +13,8 @@ from utils.formula import spectral_radius
 logger = logging.getLogger(__name__)
 
 
-def evaluate_tile(tile_G, W_args, esn_conf, dataset, num_evals=1):
+def evaluate_tile(tile_G, W_args, esn_conf, dataset, num_evals=1,
+                  skip_self_connection=False):
     """Evaluate a tile graph by building an ESN and measuring NRMSE.
 
     Args:
@@ -22,6 +23,8 @@ def evaluate_tile(tile_G, W_args, esn_conf, dataset, num_evals=1):
         esn_conf: dict with spectral_radius, f (args), washout, readout (args).
         dataset: object with u_train, y_train, u_test, y_test tensors.
         num_evals: number of evaluations to average (different W_in each time).
+        skip_self_connection: if True, don't add fixed self-connections (tile
+            already contains optimized self-loops).
 
     Returns:
         float: average NRMSE across evaluations (1.0 penalty for degenerate tiles).
@@ -32,7 +35,8 @@ def evaluate_tile(tile_G, W_args, esn_conf, dataset, num_evals=1):
     scores = []
     for _ in range(num_evals):
         try:
-            W = Matrix.from_tile(tile_G, W_args)
+            W = Matrix.from_tile(tile_G, W_args,
+                                 skip_self_connection=skip_self_connection)
             spec_rad = spectral_radius(W.W_res)
             if spec_rad == 0 or not np.isfinite(spec_rad):
                 return 1.0
@@ -49,7 +53,9 @@ def evaluate_tile(tile_G, W_args, esn_conf, dataset, num_evals=1):
             )
 
             train(dataset.u_train, dataset.y_train, model)
-            nrmse = test(dataset.u_test, dataset.y_test, model)
+            u_eval = getattr(dataset, 'u_val', dataset.u_test)
+            y_eval = getattr(dataset, 'y_val', dataset.y_test)
+            nrmse = test(u_eval, y_eval, model)
 
             if not np.isfinite(nrmse):
                 return 1.0

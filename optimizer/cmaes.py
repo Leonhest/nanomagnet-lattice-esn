@@ -41,41 +41,60 @@ def run_cmaes(config, dataset, output_dir):
         [tile_rows, tile_cols], periodic=True, neighborhood=neighborhood
     )
 
-    # Apply directed_edges stochastically using the optimization seed
+    # Check whether CMA-ES should also optimize signs, directions, self-connections
+    optimize_signs = cmaes_conf.get("optimize_signs", False)
+    optimize_directions = cmaes_conf.get("optimize_directions", False)
+    optimize_self_connections = cmaes_conf.get("optimize_self_connections", False)
+
     rng = np.random.RandomState(opt_conf.get("seed", 42))
     tile_topo = tile_topo.to_directed()
 
-    dir_frac = W_args["W_res_args"]["directed_edges_fraction"]
-    dir_weights = W_args["W_res_args"]["directed_edges_weights"]
-    undirected_edges = list(dummy_matrix.tetragonal(
-        [tile_rows, tile_cols], periodic=True, neighborhood=neighborhood
-    ).edges())
-    for u, v in undirected_edges:
-        if rng.random() < dir_frac:
-            del_u, del_v = (u, v) if rng.random() < 0.5 else (v, u)
-            if tile_topo.has_edge(del_u, del_v):
-                if dir_weights == 0.0:
-                    tile_topo.remove_edge(del_u, del_v)
-                else:
-                    tile_topo.edges[del_u, del_v]["_dir_scaled"] = True
+    if not optimize_directions:
+        # Apply directed_edges stochastically using the optimization seed
+        dir_frac = W_args["W_res_args"]["directed_edges_fraction"]
+        dir_weights = W_args["W_res_args"]["directed_edges_weights"]
+        undirected_edges = list(dummy_matrix.tetragonal(
+            [tile_rows, tile_cols], periodic=True, neighborhood=neighborhood
+        ).edges())
+        for u, v in undirected_edges:
+            if rng.random() < dir_frac:
+                del_u, del_v = (u, v) if rng.random() < 0.5 else (v, u)
+                if tile_topo.has_edge(del_u, del_v):
+                    if dir_weights == 0.0:
+                        tile_topo.remove_edge(del_u, del_v)
+                    else:
+                        tile_topo.edges[del_u, del_v]["_dir_scaled"] = True
+
+    # Add self-loops to tile topology so they become CMA-ES parameters
+    if optimize_self_connections:
+        for node in tile_topo.nodes():
+            tile_topo.add_edge(node, node)
 
     # Catalog remaining edges as the parameter vector
     edge_list = list(tile_topo.edges())
     num_params = len(edge_list)
     logger.info(f"CMA-ES: {num_params} parameters (edges in tile)")
 
-    # Pre-compute sign pattern using seed so same params give same reservoir
-    sign_frac = W_args["W_res_args"]["sign_frac"]
-    edge_signs = np.array([
-        -1 if rng.random() < sign_frac else 1
-        for _ in edge_list
-    ])
+    if not optimize_signs:
+        # Pre-compute sign pattern using seed so same params give same reservoir
+        # Self-loops are excluded from sign randomization
+        sign_frac = W_args["W_res_args"]["sign_frac"]
+        edge_signs = np.array([
+            1 if u == v else (-1 if rng.random() < sign_frac else 1)
+            for u, v in edge_list
+        ])
+    else:
+        edge_signs = np.ones(num_params)
 
-    # Pre-compute dir scale for edges selected for direction weakening
-    edge_dir_scales = np.array([
-        dir_weights if tile_topo.edges[u, v].get("_dir_scaled", False) else 1.0
-        for u, v in edge_list
-    ])
+    if not optimize_directions:
+        # Pre-compute dir scale for edges selected for direction weakening
+        dir_weights = W_args["W_res_args"]["directed_edges_weights"]
+        edge_dir_scales = np.array([
+            dir_weights if tile_topo.edges[u, v].get("_dir_scaled", False) else 1.0
+            for u, v in edge_list
+        ])
+    else:
+        edge_dir_scales = np.ones(num_params)
 
     def params_to_tile(params):
         """Convert a parameter vector to a tile DiGraph."""
@@ -89,7 +108,10 @@ def run_cmaes(config, dataset, output_dir):
 
     def fitness(params):
         tile_G = params_to_tile(params)
-        return evaluate_tile(tile_G, W_args, esn_conf, dataset, num_evals)
+        return evaluate_tile(
+            tile_G, W_args, esn_conf, dataset, num_evals,
+            skip_self_connection=optimize_self_connections,
+        )
 
     # CMA-ES setup
     sigma0 = cmaes_conf.get("sigma0", 0.3)
@@ -142,6 +164,9 @@ def run_cmaes(config, dataset, output_dir):
             "generations": generation,
             "tile_shape": [tile_rows, tile_cols],
             "neighborhood": neighborhood,
+            "optimize_signs": optimize_signs,
+            "optimize_directions": optimize_directions,
+            "optimize_self_connections": optimize_self_connections,
         })
         logger.info(f"Best tile saved to {save_path}")
 

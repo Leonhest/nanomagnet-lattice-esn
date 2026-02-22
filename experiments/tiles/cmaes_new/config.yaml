@@ -7,16 +7,8 @@ data:
   load: True
   system_order: 10
   sample_len: 5000
-  split_ratio: 0.4
-  val_ratio: 0.5
-# data:
-#     name: Mackey-Glass
-#     load: false
-#     sample_len: 6000
-#     split_ratio: 0.4
-#     val_ratio: 0.5
-#     tau: 17
-#     prediction_horizon: 1
+  split_ratio: 0.25
+  val_ratio: 0.3
 esn:
   spectral_radius: 0.9
   f:
@@ -36,23 +28,20 @@ esn:
       distribution: fixed
     W_res_args:
       lattice: True
-      self_connection: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      self_connection: 0.1
       directed_edges_fraction: 0.9
       directed_edges_weights: 0.0
       sign_frac: 0.5
-      weights_distribution: [constant, random, experiments/tiles/optimize_hneat/best_tile.json, experiments/tiles/optimize_cmaes/best_tile.json] # constant, random, tile
+      weights_distribution: tile # constant, random, tile
       neighborhood: Moore
       tile:
         shape: [3, 3]
         method: random
 optimization:
-  method: hyperneat
+  method: cmaes
   num_evals: 3
   seed: 42
   cmaes:
-    optimize_signs: true
-    optimize_directions: true
-    optimize_self_connections: true
     sigma0: 0.3
     max_generations: 10
     pop_size: 20

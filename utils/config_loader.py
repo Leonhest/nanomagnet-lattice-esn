@@ -4,6 +4,7 @@ import os
 import copy
 from itertools import product
 from data.NARMA10 import NARMA10
+from data.mackey_glass import MackeyGlass
 from readout import Ridge
 from activation import Tanh
 from ESN import ESN
@@ -112,6 +113,8 @@ class ConfigLoader():
         match name:
             case "NARMA":
                 self.conf["dataset"] = NARMA10(self.conf["data"])
+            case "Mackey-Glass":
+                self.conf["dataset"] = MackeyGlass(self.conf["data"])
             case "Lorenz":
                 pass
             case _:

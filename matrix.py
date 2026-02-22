@@ -131,18 +131,21 @@ class Matrix:
             n = int(sqrt(self.size))
             
             wd = self.W_res_args["weights_distribution"]
+            skip_self = False
             if _is_tile_path(wd):
                 tile_conf = self.W_res_args["tile"]
                 tile_rows, tile_cols = tile_conf["shape"]
                 tile_G, tile_meta = load_tile_with_metadata(wd)
                 self.G_res = self._tile_from_graph(tile_G, m, n, tile_rows, tile_cols)
+                skip_self = tile_meta.get("optimize_self_connections", False)
             elif wd == "tile":
                 self.G_res = self.tiled_rectangular(m, n)
             else:
                 self.G_res = self.rectangular(m, n, neighborhood=self.W_res_args["neighborhood"])
                 self.G_res = self._make_weights_negative(self.G_res, self.W_res_args["sign_frac"])
                 self.G_res = self._make_graph_directed(self.G_res, self.W_res_args["directed_edges_fraction"], self.W_res_args["directed_edges_weights"])
-            self._self_connection(self.G_res)
+            if not skip_self:
+                self._self_connection(self.G_res)
             W_res = nx.to_numpy_array(self.G_res)
             return torch.FloatTensor(W_res)
         else:
@@ -193,7 +196,7 @@ class Matrix:
         return _tile_edges_to_lattice(tile_G, tile_rows, tile_cols, m, n)
 
     @classmethod
-    def from_tile(cls, tile_G, W_args):
+    def from_tile(cls, tile_G, W_args, skip_self_connection=False):
         """Build a Matrix from a pre-built tile nx.DiGraph with weight attributes.
 
         Bypasses the normal __init__ to directly tile the given graph onto the
@@ -212,7 +215,8 @@ class Matrix:
         tile_rows, tile_cols = tile_conf["shape"]
 
         obj.G_res = obj._tile_from_graph(tile_G, m, n, tile_rows, tile_cols)
-        obj._self_connection(obj.G_res)
+        if not skip_self_connection:
+            obj._self_connection(obj.G_res)
         W_res = nx.to_numpy_array(obj.G_res)
         obj.W_res = torch.FloatTensor(W_res)
 
@@ -285,11 +289,14 @@ class Matrix:
             d['weight'] = d['weight']*sign if 'weight' in d else sign
         return G
 
-def plot_tile(tile_G, title="Tile graph", save_path=None, show=True):
+def plot_tile(tile_G, title="Tile graph", save_path=None, show=True, ax=None):
     """Visualize a tile graph with ghost padding nodes for periodic edges.
 
     Wrapping edges are drawn to ghost nodes in a padding layer around the tile,
     making the periodic structure clear without chaotic cross-tile arcs.
+
+    If *ax* is provided, draws onto that axes instead of creating a new figure.
+    In that case save_path/show are ignored (caller manages the figure).
     """
     if tile_G.number_of_edges() == 0:
         print("Tile has no edges to plot.")
@@ -352,7 +359,11 @@ def plot_tile(tile_G, title="Tile graph", save_path=None, show=True):
     cmap = plt.cm.RdBu_r
     edge_colors = [cmap(norm(w)) for w in edge_weights]
 
-    fig, ax = plt.subplots(figsize=(7, 7))
+    own_fig = ax is None
+    if own_fig:
+        fig, ax = plt.subplots(figsize=(7, 7))
+    else:
+        fig = ax.get_figure()
 
     # Draw real nodes
     nx.draw_networkx_nodes(display_G, pos=pos, nodelist=real_nodes, ax=ax,
@@ -381,15 +392,15 @@ def plot_tile(tile_G, title="Tile graph", save_path=None, show=True):
     fig.colorbar(sm, ax=ax, label="Edge weight", shrink=0.8)
 
     ax.set_title(title)
-    plt.tight_layout()
 
-    if save_path:
-        plt.savefig(save_path, dpi=300)
-
-    if show:
-        plt.show()
-    else:
-        plt.close()
+    if own_fig:
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path, dpi=300)
+        if show:
+            plt.show()
+        else:
+            plt.close()
 
 
 def plot_lattice(G, title="Tiled lattice reservoir", save_path=None, show=True):
@@ -436,11 +447,19 @@ if __name__ == "__main__":
     # python matrix.py                          → visualize a random tiled lattice
     # python matrix.py tile.json                → visualize the tile only
     # python matrix.py tile.json --lattice      → tile onto full lattice and visualize
+    # python matrix.py tile.json --analyze      → full tile analysis (multi-panel figure)
     args = sys.argv[1:]
     json_path = next((a for a in args if a.endswith(".json")), None)
     show_lattice = "--lattice" in args
+    do_analyze = "--analyze" in args
 
-    if json_path and show_lattice:
+    if json_path and do_analyze:
+        from utils.tile_analysis import analyze_tile
+        size_arg = next((a for a in args if a.startswith("--size=")), None)
+        lattice_size = int(size_arg.split("=")[1]) if size_arg else 400
+        show = "--no-show" not in args
+        analyze_tile(json_path, lattice_size=lattice_size, show=show)
+    elif json_path and show_lattice:
         tile_G, meta = load_tile_with_metadata(json_path)
         tile_shape = meta.get("tile_shape", [3, 3])
         lattice_G = tile_to_lattice(tile_G, tile_shape, lattice_size=36)

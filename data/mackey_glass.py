@@ -1,15 +1,14 @@
 import torch
 import numpy as np
-import matplotlib.pyplot as plt
 
 
-
-class NARMA10():
+class MackeyGlass():
 
     def __init__(self, conf):
         self.conf = conf
         self.name = conf["name"]
-        self._data_dir = f'data/datasets/NARMA{conf["system_order"]}'
+        tau = conf.get("tau", 17)
+        self._data_dir = f'data/datasets/MackeyGlass_tau{tau}'
 
         if self.conf["load"] == True:
             self._load_data()
@@ -28,38 +27,45 @@ class NARMA10():
             self.y_val = torch.FloatTensor(np.load(f'{d}/y_val.npy'))
 
     def _generate_data(self):
-        n = self.conf["system_order"]
+        tau = self.conf.get("tau", 17)
         sample_len = self.conf["sample_len"]
+        h = self.conf.get("prediction_horizon", 1)
+        warmup = 1000
 
-        if n == 10 or n == 20:
-            alpha = 0.3
-            beta = 0.05
-            gamma = 1.5
-            delta = 0.1
-        elif n == 30:
-            # Unchanged for now.
-            alpha = 0.3
-            beta = 0.05
-            gamma = 1.5
-            delta = 0.1
-        else:
-            raise ValueError('Invalid system order for NARMA time series')
+        # Standard Mackey-Glass parameters
+        beta = 0.2
+        gamma = 0.1
+        n = 10
+        dt = 1.0
 
-        u = torch.rand(sample_len) * 0.5
-        y = torch.zeros(sample_len)
+        # Total length needed: warmup + sample_len + prediction_horizon
+        total_len = warmup + sample_len + h
 
-        for t in range(n, sample_len):
-            y[t] = alpha*y[t-1] + \
-                beta*y[t-1]*torch.sum(y[t-n:t]) + \
-                gamma*u[t-1]*u[t-n] + \
-                delta
-            if n != 10:
-                y[t] = np.tanh(y[t])
+        # Initialize history for t in [-tau, 0] with x = 0.9
+        x = np.zeros(total_len + tau)
+        x[:tau] = 0.9
 
-        if not np.isfinite(y).all():
-            class DivergentTimeseriesError(Exception):
-                pass
-            raise DivergentTimeseriesError('Divergent NARMA time series, try again')
+        # Integrate with RK4
+        for t in range(tau, total_len + tau - 1):
+            def dxdt(x_t, x_delayed):
+                return beta * x_delayed / (1.0 + x_delayed**n) - gamma * x_t
+
+            x_t = x[t]
+            x_d = x[t - tau]
+
+            k1 = dt * dxdt(x_t, x_d)
+            k2 = dt * dxdt(x_t + k1/2, x_d)
+            k3 = dt * dxdt(x_t + k2/2, x_d)
+            k4 = dt * dxdt(x_t + k3, x_d)
+
+            x[t + 1] = x_t + (k1 + 2*k2 + 2*k3 + k4) / 6
+
+        # Discard initial history and warmup transient
+        series = x[tau + warmup:]
+
+        # u[t] = x[t], y[t] = x[t + h]
+        u = torch.from_numpy(series[:sample_len]).float()
+        y = torch.from_numpy(series[h:sample_len + h]).float()
 
         splits = self._split_data(u, y)
         self.save_data(**splits)
@@ -106,21 +112,3 @@ class NARMA10():
         if u_val is not None:
             np.save(f'{d}/u_val.npy', u_val)
             np.save(f'{d}/y_val.npy', y_val)
-
-
-if __name__ == "__main__":
-    # load data from file
-    u_train = np.load('datasets/NARMA10/u_train.npy')
-    y_train = np.load('datasets/NARMA10/y_train.npy')
-    u_test = np.load('datasets/NARMA10/u_test.npy')
-    y_test = np.load('datasets/NARMA10/y_test.npy')
-
-    # plot distribution of u_train and y_train
-    plt.hist(u_train, bins=100)
-    plt.show()
-    plt.hist(y_train, bins=100)
-    plt.show()
-    plt.hist(u_test, bins=100)
-    plt.show()
-    plt.hist(y_test, bins=100)
-    plt.show()
