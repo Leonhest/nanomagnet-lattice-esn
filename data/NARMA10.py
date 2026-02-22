@@ -14,7 +14,14 @@ class NARMA10():
         if self.conf["load"] == True:
             self._load_data()
         else:
-            self._generate_data()
+            max_attempts = 10
+            for attempt in range(max_attempts):
+                try:
+                    self._generate_data()
+                    break
+                except Exception:
+                    if attempt == max_attempts - 1:
+                        raise
 
     def _load_data(self):
         d = self._data_dir

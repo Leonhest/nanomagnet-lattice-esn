@@ -6,7 +6,7 @@ data:
   name: NARMA
   load: True
   system_order: 10
-  sample_len: 5000
+  sample_len: 6250
   split_ratio: 0.4
   val_ratio: 0.5
 # data:

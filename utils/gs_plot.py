@@ -139,7 +139,7 @@ def _plot_2d_heatmap(param_names, results, exp_path, metric_label, suffix):
     plt.close()
 
 
-def _plot_2d_lines(param_names, results, exp_path, metric_label, suffix, *, max_groups=5):
+def _plot_2d_lines(param_names, results, exp_path, metric_label, suffix, *, max_groups=6):
     """
     Plot overlaid lines. Uses _select_line_group to pick the line group
     (categorical preferred) vs x-axis. Skips if line group has more than
