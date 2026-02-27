@@ -264,7 +264,7 @@ def analyze_tile(tile_path, *, lattice_size=400, tile_shape=None, save_path=None
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python -m utils.tile_analysis <tile.json> [--size=N] [--no-show]")
+        print("Usage: python -m utils.tile_analysis <tile.json> [--size=N] [--no-show] [--eigvec]")
         sys.exit(1)
 
     args = sys.argv[1:]
@@ -282,3 +282,7 @@ if __name__ == "__main__":
     print(f"Avg degree: {stats['avg_degree']:.2f}")
     if stats["avg_tri"] is not None:
         print(f"Avg TRI: {stats['avg_tri']:.4f}")
+
+    if "--eigvec" in args:
+        from utils.eigvec_viz import eigenvector_viz_from_tile
+        eigenvector_viz_from_tile(json_path, lattice_size=lattice_size)

@@ -87,7 +87,7 @@ def tile_to_lattice(tile_G, tile_shape, lattice_size=36):
 
 
 def _is_tile_path(value):
-    """Check if a weights_distribution value is a file path to a saved tile."""
+    """Check if a type value is a file path to a saved tile."""
     return isinstance(value, str) and value.endswith(".json")
 
 
@@ -126,11 +126,11 @@ class Matrix:
         return W_in
 
     def _init_W_res(self):
-        if self.W_res_args["lattice"]:
+        if self.W_res_args["type"] != "baseline-esn":
             m = int(sqrt(self.size))
             n = int(sqrt(self.size))
-            
-            wd = self.W_res_args["weights_distribution"]
+
+            wd = self.W_res_args["type"]
             skip_self = False
             if _is_tile_path(wd):
                 tile_conf = self.W_res_args["tile"]
@@ -254,12 +254,12 @@ class Matrix:
             G.nodes[n]['pos'] = (pos[0], pos[1])
 
         for u, v, d in G.edges(data=True):
-            if self.W_res_args["weights_distribution"] == "constant":
+            if self.W_res_args["type"] == "constant":
                 d['weight'] = 1
-            elif self.W_res_args["weights_distribution"] == "random":
+            elif self.W_res_args["type"] == "random":
                 d['weight'] = np.random.random()
-            elif self.W_res_args["weights_distribution"] == "custom":
-                d['weight'] = 1 
+            elif self.W_res_args["type"] == "custom":
+                d['weight'] = 1
             else:
                 d['weight'] = 1
 
@@ -453,12 +453,17 @@ if __name__ == "__main__":
     show_lattice = "--lattice" in args
     do_analyze = "--analyze" in args
 
+    do_eigvec = "--eigvec" in args
+
     if json_path and do_analyze:
         from utils.tile_analysis import analyze_tile
         size_arg = next((a for a in args if a.startswith("--size=")), None)
         lattice_size = int(size_arg.split("=")[1]) if size_arg else 400
         show = "--no-show" not in args
         analyze_tile(json_path, lattice_size=lattice_size, show=show)
+        if do_eigvec:
+            from utils.eigvec_viz import eigenvector_viz_from_tile
+            eigenvector_viz_from_tile(json_path, lattice_size=lattice_size)
     elif json_path and show_lattice:
         tile_G, meta = load_tile_with_metadata(json_path)
         tile_shape = meta.get("tile_shape", [3, 3])
@@ -474,9 +479,8 @@ if __name__ == "__main__":
             "W_res_args": {
                 "self_connection": 0.0,
                 "sign_frac": 0.5,
-                "lattice": True,
+                "type": "tile",
                 "neighborhood": "Moore",
-                "weights_distribution": "tile",
                 "directed_edges_weights": 0.0,
                 "directed_edges_fraction": 0.5,
                 "tile": {"shape": [3, 3], "method": "random"},

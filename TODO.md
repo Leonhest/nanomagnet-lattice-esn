@@ -11,3 +11,9 @@
 3. **Test reservoir performance when removing specific eigenvalue modes**
    Selectively zeroing out eigenvalues and reconstructing `W_res` allows testing which modes are essential for task performance. This can reveal whether memory, oscillatory, or amplifying modes drive NRMSE.
    *Implementation:* Eigendecompose `W_res = V @ diag(λ) @ V^{-1}`. Zero out targeted eigenvalues (e.g. the half-moon cluster, purely oscillatory modes, or smallest modes), reconstruct `W_res`, and run the ESN with the modified matrix. Compare NRMSE to baseline. Could also try removing modes by magnitude range or by real/imaginary dominance.
+
+4. **Test small tile training to full network training performance**
+   Train/optimize weights on a small tile and tile it to build the full reservoir, then compare against training the full network directly. This tests whether locally optimized structure transfers effectively when repeated across the lattice.
+
+5. **Orthogonal reservoirs**
+   Use orthogonal weight matrices for the reservoir. Orthogonal matrices preserve norms and have all eigenvalues on the unit circle, providing stable dynamics without vanishing/exploding gradients and maximal memory capacity in theory.
