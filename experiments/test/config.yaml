@@ -35,11 +35,11 @@ esn:
       input_scale: 0.1
       distribution: fixed
     W_res_args:
-      self_connection: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-      directed_edges_fraction: 0.9
+      self_connection: 0.0
+      directed_edges_fraction: [0.5]
       directed_edges_weights: 0.0
-      sign_frac: 0.5
-      type: [constant, random, experiments/tiles/optimize_hneat/best_tile.json, experiments/tiles/optimize_cmaes/best_tile.json] # constant, random, tile, baseline-esn
+      sign_frac: [0.5]
+      type: constant # constant, random, tile, baseline-esn
       neighborhood: Moore
       tile:
         shape: [3, 3]

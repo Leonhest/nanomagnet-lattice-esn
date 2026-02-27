@@ -162,7 +162,6 @@ def run_cmaes(config, dataset, output_dir):
             "method": "cmaes",
             "best_nrmse": best_nrmse,
             "generations": generation,
-            "tile_shape": [tile_rows, tile_cols],
             "neighborhood": neighborhood,
             "optimize_signs": optimize_signs,
             "optimize_directions": optimize_directions,

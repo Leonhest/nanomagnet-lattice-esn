@@ -14,15 +14,19 @@ def euclidean(x, y):
 
 def save_tile(tile_G, path, metadata=None):
     """Save a tile graph as JSON (edge list + metadata)."""
+    nodes = list(tile_G.nodes())
+    tile_shape = [max(n[0] for n in nodes) + 1, max(n[1] for n in nodes) + 1]
     data = {
-        "nodes": list(tile_G.nodes()),
+        "nodes": nodes,
         "edges": [
             {"src": _node_to_json(u), "dst": _node_to_json(v), "weight": d["weight"]}
             for u, v, d in tile_G.edges(data=True)
         ],
     }
+    meta = {"tile_shape": tile_shape}
     if metadata:
-        data["metadata"] = metadata
+        meta.update(metadata)
+    data["metadata"] = meta
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
 
@@ -133,9 +137,8 @@ class Matrix:
             wd = self.W_res_args["type"]
             skip_self = False
             if _is_tile_path(wd):
-                tile_conf = self.W_res_args["tile"]
-                tile_rows, tile_cols = tile_conf["shape"]
                 tile_G, tile_meta = load_tile_with_metadata(wd)
+                tile_rows, tile_cols = tile_meta["tile_shape"]
                 self.G_res = self._tile_from_graph(tile_G, m, n, tile_rows, tile_cols)
                 skip_self = tile_meta.get("optimize_self_connections", False)
             elif wd == "tile":
@@ -211,8 +214,9 @@ class Matrix:
 
         m = int(sqrt(obj.size))
         n = int(sqrt(obj.size))
-        tile_conf = obj.W_res_args["tile"]
-        tile_rows, tile_cols = tile_conf["shape"]
+        nodes = list(tile_G.nodes())
+        tile_rows = max(nd[0] for nd in nodes) + 1
+        tile_cols = max(nd[1] for nd in nodes) + 1
 
         obj.G_res = obj._tile_from_graph(tile_G, m, n, tile_rows, tile_cols)
         if not skip_self_connection:
@@ -447,24 +451,12 @@ if __name__ == "__main__":
     # python matrix.py                          → visualize a random tiled lattice
     # python matrix.py tile.json                → visualize the tile only
     # python matrix.py tile.json --lattice      → tile onto full lattice and visualize
-    # python matrix.py tile.json --analyze      → full tile analysis (multi-panel figure)
+    # For analysis, use: python -m utils.analysis <tile.json or config.yaml>
     args = sys.argv[1:]
     json_path = next((a for a in args if a.endswith(".json")), None)
     show_lattice = "--lattice" in args
-    do_analyze = "--analyze" in args
 
-    do_eigvec = "--eigvec" in args
-
-    if json_path and do_analyze:
-        from utils.tile_analysis import analyze_tile
-        size_arg = next((a for a in args if a.startswith("--size=")), None)
-        lattice_size = int(size_arg.split("=")[1]) if size_arg else 400
-        show = "--no-show" not in args
-        analyze_tile(json_path, lattice_size=lattice_size, show=show)
-        if do_eigvec:
-            from utils.eigvec_viz import eigenvector_viz_from_tile
-            eigenvector_viz_from_tile(json_path, lattice_size=lattice_size)
-    elif json_path and show_lattice:
+    if json_path and show_lattice:
         tile_G, meta = load_tile_with_metadata(json_path)
         tile_shape = meta.get("tile_shape", [3, 3])
         lattice_G = tile_to_lattice(tile_G, tile_shape, lattice_size=36)

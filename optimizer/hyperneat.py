@@ -112,7 +112,6 @@ def run_hyperneat(config, dataset, output_dir):
             "method": "hyperneat",
             "best_nrmse": best_nrmse,
             "generations": generations,
-            "tile_shape": tile_shape,
             "threshold": threshold,
             "substrate": hn_conf.get("substrate", "grid"),
         })

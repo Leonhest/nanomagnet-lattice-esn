@@ -33,11 +33,10 @@ def calculate_total_recurrent_influence(W_res):
     n_reservoir = W_res.shape[0]
     I = np.identity(n_reservoir)
 
-    avg_degree = calculate_avg_degree(W_res)
+    z = calculate_avg_degree(W_res)
 
     try:
-        #S = W_res @ np.linalg.inv(I - W_res)
-        S = avg_degree*W_res @ np.linalg.inv(I*avg_degree - W_res)
+        S = np.linalg.inv(z * I - W_res)
         
         total_recurrent_influence = np.diag(S)
 

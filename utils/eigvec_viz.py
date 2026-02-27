@@ -96,9 +96,21 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     total_local_kuramoto /= abs_eigvals.sum()
     total_local_kuramoto_grid = total_local_kuramoto.reshape(m, m).tolist()
 
-    # Resolvent: (I - W)^{-1}
-    resolvent = np.linalg.inv(np.eye(n) - W_res)
-    resolvent_grid = resolvent.tolist()
+    # --- Resolvent computations -----------------------------------------------
+    I = np.eye(n)
+    res_inv_z1 = np.linalg.inv(I - W_res)
+
+    # (I - W)^{-1} @ 1  — total influence per node at z=1
+    res_z1 = (res_inv_z1 @ np.ones(n)).reshape(m, m).tolist()
+
+    # (e^{i*0.5}I - W)^{-1} @ 1  — complex resolvent at z=e^{i*0.5}
+    z = np.exp(1j * 0.5)
+    res_z_complex = np.linalg.inv(z * I - W_res) @ np.ones(n)
+    res_z_mag = np.abs(res_z_complex).reshape(m, m).tolist()
+    res_z_phase = np.angle(res_z_complex).reshape(m, m).tolist()
+
+    # diag((I - W)^{-1})  — self-influence per node
+    res_diag = np.diag(res_inv_z1).reshape(m, m).tolist()
 
     eigvec_data = {
         "mag": mag_grids,
@@ -111,26 +123,33 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         "m": m,
         "activity": activity_grid,
         "total_local_kuramoto": total_local_kuramoto_grid,
-        "resolvent": resolvent_grid,
     }
 
     # --- Build Plotly figure --------------------------------------------------
+    # Layout: 3 rows x 4 cols
+    #   Row 1: Spectrum [rowspan=2, colspan=2] | Magnitude | Local R
+    #   Row 2:                                 | Phase     |
+    #   Row 3: Res(z=1)@1 | |Res(z=e^i0.5)@1| | angle Res  | diag(Res)
     fig = make_subplots(
-        rows=2, cols=3,
-        column_widths=[0.40, 0.30, 0.30],
-        row_heights=[0.5, 0.5],
+        rows=3, cols=4,
+        column_widths=[0.25, 0.25, 0.25, 0.25],
+        row_heights=[0.35, 0.35, 0.30],
         specs=[
-            [{"rowspan": 2}, {"type": "heatmap"}, {"type": "heatmap"}],
-            [None, {"type": "heatmap"}, {"type": "heatmap"}],
+            [{"rowspan": 2, "colspan": 2}, None, {"type": "heatmap"}, {"type": "heatmap"}],
+            [None, None, {"type": "heatmap"}, None],
+            [{"type": "heatmap"}, {"type": "heatmap"}, {"type": "heatmap"}, {"type": "heatmap"}],
         ],
         subplot_titles=[
             "Eigenvalue Spectrum",
             f"Magnitude |v| \u2014 \u03bb\u2080 = {eigvals[0].real:.4f}{eigvals[0].imag:+.4f}j",
             "Local Phase Coherence R",
             f"Phase \u2220v \u2014 \u03bb\u2080 = {eigvals[0].real:.4f}{eigvals[0].imag:+.4f}j",
-            "Resolvent (I \u2212 W)\u207b\u00b9",
+            "(I \u2212 W)\u207b\u00b9 \u00b7 1",
+            "|(e\u2071\u2070\u22c5\u2075I \u2212 W)\u207b\u00b9 \u00b7 1|",
+            "\u2220(e\u2071\u2070\u22c5\u2075I \u2212 W)\u207b\u00b9 \u00b7 1",
+            "diag (I \u2212 W)\u207b\u00b9",
         ],
-        horizontal_spacing=0.08,
+        horizontal_spacing=0.06,
         vertical_spacing=0.10,
     )
 
@@ -160,7 +179,6 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         f"\u03bb = {eigvals[i].real:.4f}{eigvals[i].imag:+.4f}j<br>|\u03bb| = {np.abs(eigvals[i]):.4f}<br>R = {kuramoto[i]:.3f}<br>index = {i}"
         for i in range(n)
     ]
-    # Marker line: highlight the dominant eigenvalue by default
     line_widths = [2.5] + [0] * (n - 1)
     line_colors = ["red"] + ["rgba(0,0,0,0)"] * (n - 1)
     fig.add_trace(
@@ -171,7 +189,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
                 size=7,
                 color=np.abs(eigvals).tolist(),
                 colorscale="Viridis",
-                colorbar=dict(title="|\u03bb|", x=-0.07, len=0.45, y=0.5, thickness=12),
+                colorbar=dict(title="|\u03bb|", x=-0.08, len=0.35, y=0.68, thickness=12),
                 line=dict(width=line_widths, color=line_colors),
             ),
             text=hover_text, hoverinfo="text",
@@ -180,17 +198,17 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         row=1, col=1,
     )
 
-    # Trace 3: Magnitude heatmap (default: dominant eigenvector)
+    # Trace 3: Magnitude heatmap (row=1, col=3)
     fig.add_trace(
         go.Heatmap(
             z=mag_grids[0], colorscale="Viridis",
-            colorbar=dict(title="|v|", x=0.69, len=0.35, y=0.78, thickness=12),
+            colorbar=dict(title="|v|", x=0.74, len=0.26, y=0.86, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>|v|=%{z:.4f}<extra></extra>",
         ),
-        row=1, col=2,
+        row=1, col=3,
     )
 
-    # Trace 4: Phase heatmap (cyclic colorscale so -pi and pi are the same color)
+    # Trace 4: Phase heatmap (row=2, col=3)
     phase_colorscale = [
         [0.0,  "rgb(225,216,226)"],
         [0.1,  "rgb(165,191,202)"],
@@ -208,33 +226,64 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         go.Heatmap(
             z=phase_grids[0], colorscale=phase_colorscale,
             zmin=-np.pi, zmax=np.pi,
-            colorbar=dict(title="\u2220v", x=0.69, len=0.35, y=0.22, thickness=12),
+            colorbar=dict(title="\u2220v", x=0.74, len=0.26, y=0.48, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>\u2220v=%{z:.4f}<extra></extra>",
         ),
-        row=2, col=2,
+        row=2, col=3,
     )
 
-    # Trace 5: Local Kuramoto R heatmap (default: dominant eigenvector)
+    # Trace 5: Local Kuramoto R heatmap (row=1, col=4)
     fig.add_trace(
         go.Heatmap(
             z=local_kuramoto_grids[0], colorscale="Viridis",
             zmin=0, zmax=1,
-            colorbar=dict(title="R", x=1.01, len=0.35, y=0.78, thickness=12),
+            colorbar=dict(title="R", x=1.01, len=0.26, y=0.86, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>R=%{z:.4f}<extra></extra>",
         ),
-        row=1, col=3,
+        row=1, col=4,
     )
 
-    # Trace 6: Resolvent heatmap (static, full n x n matrix)
-    res_abs_max = np.max(np.abs(resolvent))
+    # --- Row 3: Resolvent heatmaps (all static) -------------------------------
+
+    # Trace 6: (I - W)^{-1} @ 1  (row=3, col=1)
     fig.add_trace(
         go.Heatmap(
-            z=resolvent_grid, colorscale="RdBu_r",
-            zmid=0, zmin=-res_abs_max, zmax=res_abs_max,
-            colorbar=dict(title="(I\u2212W)\u207b\u00b9", x=1.01, len=0.35, y=0.22, thickness=12),
+            z=res_z1, colorscale="RdBu_r", zmid=0,
+            colorbar=dict(title="val", x=0.21, len=0.22, y=0.12, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>val=%{z:.4f}<extra></extra>",
         ),
-        row=2, col=3,
+        row=3, col=1,
+    )
+
+    # Trace 7: |(e^{i*0.5}I - W)^{-1} @ 1|  (row=3, col=2)
+    fig.add_trace(
+        go.Heatmap(
+            z=res_z_mag, colorscale="Viridis",
+            colorbar=dict(title="|val|", x=0.47, len=0.22, y=0.12, thickness=12),
+            hovertemplate="row=%{y}, col=%{x}<br>|val|=%{z:.4f}<extra></extra>",
+        ),
+        row=3, col=2,
+    )
+
+    # Trace 8: angle((e^{i*0.5}I - W)^{-1} @ 1)  (row=3, col=3)
+    fig.add_trace(
+        go.Heatmap(
+            z=res_z_phase, colorscale=phase_colorscale,
+            zmin=-np.pi, zmax=np.pi,
+            colorbar=dict(title="\u2220", x=0.74, len=0.22, y=0.12, thickness=12),
+            hovertemplate="row=%{y}, col=%{x}<br>\u2220=%{z:.4f}<extra></extra>",
+        ),
+        row=3, col=3,
+    )
+
+    # Trace 9: diag((I - W)^{-1})  (row=3, col=4)
+    fig.add_trace(
+        go.Heatmap(
+            z=res_diag, colorscale="RdBu_r", zmid=0,
+            colorbar=dict(title="diag", x=1.01, len=0.22, y=0.12, thickness=12),
+            hovertemplate="row=%{y}, col=%{x}<br>val=%{z:.4f}<extra></extra>",
+        ),
+        row=3, col=4,
     )
 
     # Spectrum axis styling
@@ -242,17 +291,15 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     fig.update_yaxes(title_text="Im(\u03bb)", scaleanchor="x", scaleratio=1, constrain="domain", row=1, col=1)
 
     # Heatmap axes — reversed y for matrix layout
-    fig.update_yaxes(autorange="reversed", row=1, col=2)
-    fig.update_yaxes(autorange="reversed", row=2, col=2)
-    fig.update_yaxes(autorange="reversed", row=1, col=3)
-    fig.update_yaxes(autorange="reversed", row=2, col=3)
+    for r, c in [(1, 3), (1, 4), (2, 3), (3, 1), (3, 2), (3, 3), (3, 4)]:
+        fig.update_yaxes(autorange="reversed", row=r, col=c)
 
     fig.update_layout(
         title=dict(text=title, x=0.5),
-        height=750,
+        height=950,
         margin=dict(l=80, r=30, t=80, b=40),
         showlegend=True,
-        legend=dict(x=0.0, y=0.98, orientation="h"),
+        legend=dict(x=0.0, y=1.0, yanchor="top", orientation="h"),
     )
 
     # --- Generate HTML with embedded data + click handler ---------------------
@@ -261,6 +308,15 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         config={"responsive": True},
     )
 
+    # Annotation indices (8 non-None cells):
+    #   [0] Eigenvalue Spectrum
+    #   [1] Magnitude
+    #   [2] Local Phase Coherence R
+    #   [3] Phase
+    #   [4] Res(z=1)@1
+    #   [5] |Res(z=e^i0.5)@1|
+    #   [6] angle Res(z=e^i0.5)@1
+    #   [7] diag(Res)
     js_handler = """
 <script>
 (function() {
@@ -320,7 +376,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         var shortLabel = '\\u03bb' + idx + ' = ' + re + im + 'j';
 
         var annotations = plot.layout.annotations || [];
-        if (annotations.length >= 5) {
+        if (annotations.length >= 8) {
             annotations[1].text = 'Magnitude |v| \\u2014 ' + label;
             annotations[2].text = 'Local Phase Coherence \\u2014 ' + shortLabel;
             annotations[3].text = 'Phase \\u2220v \\u2014 ' + shortLabel;
@@ -336,9 +392,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         var isActive = this.classList.contains('active');
 
         if (isActive) {
-            // Magnitude -> total activity
             Plotly.restyle(plot, {z: [data.activity]}, [3]);
-            // Phase -> blank (not meaningful)
             var m = data.m;
             var blank = [];
             for (var r = 0; r < m; r++) {
@@ -347,23 +401,20 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
                 blank.push(row);
             }
             Plotly.restyle(plot, {z: [blank], colorscale: [[[0, 'rgb(200,200,200)'], [1, 'rgb(200,200,200)']]], zmin: [0], zmax: [1]}, [4]);
-            // Local R -> weighted total
             Plotly.restyle(plot, {z: [data.total_local_kuramoto]}, [5]);
 
-            // Clear eigenvalue highlights
             var widths = new Array(n).fill(0);
             var colors = new Array(n).fill('rgba(0,0,0,0)');
             Plotly.restyle(plot, {'marker.line.width': [widths], 'marker.line.color': [colors]}, [2]);
 
             var annotations = plot.layout.annotations || [];
-            if (annotations.length >= 5) {
+            if (annotations.length >= 8) {
                 annotations[1].text = 'Total Activity \\u2014 \\u03a3 |\\u03bb\\u1d62|\\u00b7|v\\u1d62|\\u00b2';
                 annotations[2].text = 'Local Phase Coherence (weighted total)';
                 annotations[3].text = '(inactive during Total Activity)';
                 Plotly.relayout(plot, {annotations: annotations});
             }
         } else {
-            // Revert to current eigenvector
             var idx = currentIdx;
             Plotly.restyle(plot, {z: [data.mag[idx]]}, [3]);
             Plotly.restyle(plot, {z: [data.phase[idx]], colorscale: [phaseCS], zmin: [-Math.PI], zmax: [Math.PI]}, [4]);
@@ -383,7 +434,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
             var shortLabel = '\\u03bb' + idx + ' = ' + re + im + 'j';
 
             var annotations = plot.layout.annotations || [];
-            if (annotations.length >= 5) {
+            if (annotations.length >= 8) {
                 annotations[1].text = 'Magnitude |v| \\u2014 ' + label;
                 annotations[2].text = 'Local Phase Coherence \\u2014 ' + shortLabel;
                 annotations[3].text = 'Phase \\u2220v \\u2014 ' + shortLabel;
@@ -425,7 +476,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
 <title>{title}</title>
 <style>
   body {{ margin: 20px; font-family: sans-serif; }}
-  #eigvec-plot {{ width: 100%; min-height: 750px; }}
+  #eigvec-plot {{ width: 100%; min-height: 950px; }}
   #info {{ color: #666; margin-bottom: 10px; font-size: 14px; }}
   #activity-btn {{
     padding: 8px 18px; margin-left: 16px; cursor: pointer;
