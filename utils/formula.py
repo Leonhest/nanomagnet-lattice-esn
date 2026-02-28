@@ -15,35 +15,33 @@ def spectral_radius(w):
 
 def calculate_total_recurrent_influence(W_res):
     """
-    Calculates the total influence of each node on itself over all possible
-    path lengths in the reservoir graph.
+    Calculates the relative self-influence of each node using the resolvent.
+
+    TRI(j) = |R_jj| / Σ_k |R_jk|
+
+    where R = (zI - W)^{-1} and z = avg in-degree.  This gives the fraction
+    of total influence on node j that comes from itself.
 
     Args:
         W_res (np.ndarray): The reservoir adjacency matrix.
 
     Returns:
-        np.ndarray: A vector where the i-th element is the total recurrent
-                    influence (TRI) of node i.
+        np.ndarray: A vector where the i-th element is the relative
+                    self-influence (TRI) of node i, in [0, 1].
     """
-    spectral_radius = np.max(np.abs(np.linalg.eigvals(W_res)))
-    if spectral_radius >= 1:
-        print(f"Warning: Spectral radius is {spectral_radius:.4f}, which is >= 1.")
-        print("The Neumann series may not converge, and results can be unstable.")
-
     n_reservoir = W_res.shape[0]
     I = np.identity(n_reservoir)
 
     z = calculate_avg_degree(W_res)
 
     try:
-        S = np.linalg.inv(z * I - W_res)
-        
-        total_recurrent_influence = np.diag(S)
-
-        return total_recurrent_influence
+        R = np.linalg.inv(z * I - W_res)
+        diag_abs = np.abs(np.diag(R))
+        row_sums = np.sum(np.abs(R), axis=1)
+        return diag_abs / row_sums
 
     except np.linalg.LinAlgError:
-        print("Error: The matrix (I - W_res) is singular and cannot be inverted.")
+        print("Error: The matrix (zI - W_res) is singular and cannot be inverted.")
         return np.full(n_reservoir, np.nan)
 
 def calculate_avg_degree(W_res):

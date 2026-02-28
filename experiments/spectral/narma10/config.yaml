@@ -18,7 +18,7 @@ data:
 #     tau: 17
 #     prediction_horizon: 1
 esn:
-  spectral_radius: 0.9
+  spectral_radius: [0.85,0.9,0.95,0.97,0.99]
   f:
     name: tanh
     args:
@@ -39,19 +39,19 @@ esn:
       directed_edges_fraction: 0.9
       directed_edges_weights: 0.0
       sign_frac: 0.5
-      type: [random, tile] # constant, random, tile, baseline-esn
+      type: [constant, baseline-esn, ] # constant, random, tile, baseline-esn
       neighborhood: Moore
       tile:
         shape: [3, 3]
         method: random
 optimization:
-  method: hyperneat
+  method: cmaes
   num_evals: 3
   seed: 42
   cmaes:
-    optimize_signs: true
-    optimize_directions: true
-    optimize_self_connections: true
+    optimize_signs: false
+    optimize_directions: false
+    optimize_self_connections: false
     sigma0: 0.3
     max_generations: 10
     pop_size: 20

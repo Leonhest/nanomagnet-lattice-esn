@@ -30,7 +30,9 @@ class ConfigLoader():
         config_path = ConfigLoader._find_conf_static(exp_path)
         with open(config_path, "r") as f:
             base_config = yaml.safe_load(f)
-        
+
+        ConfigLoader._expand_folder_paths(base_config)
+
         # Get num_runs from config
         num_runs = base_config.get("num_runs", 1)
         
@@ -73,6 +75,38 @@ class ConfigLoader():
         "optimization.hyperneat.substrate_shape",
         "optimization.hyperneat.substrate_coords",
     }
+
+    @staticmethod
+    def _expand_folder_paths(config):
+        """Expand directory paths in W_res_args.type to lists of .json tile files."""
+        try:
+            type_val = config["esn"]["W_args"]["W_res_args"]["type"]
+        except (KeyError, TypeError):
+            return
+
+        def _expand(val):
+            if isinstance(val, str) and os.path.isdir(val):
+                jsons = sorted(
+                    os.path.join(val, f) for f in os.listdir(val) if f.endswith(".json")
+                )
+                if not jsons:
+                    raise ValueError(f"No .json tile files found in directory: {val}")
+                return jsons
+            return val
+
+        if isinstance(type_val, list):
+            expanded = []
+            for v in type_val:
+                result = _expand(v)
+                if isinstance(result, list):
+                    expanded.extend(result)
+                else:
+                    expanded.append(result)
+            config["esn"]["W_args"]["W_res_args"]["type"] = expanded
+        else:
+            result = _expand(type_val)
+            if isinstance(result, list):
+                config["esn"]["W_args"]["W_res_args"]["type"] = result
 
     @staticmethod
     def _find_list_parameters(config, prefix="", result=None):
