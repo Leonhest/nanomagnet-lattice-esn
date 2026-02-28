@@ -18,7 +18,7 @@ class ESN(nn.Module):
         self.readout = readout
         self.hidden_nodes = len(self.W.W_res)
         spec_rad = _spectral_radius(self.W.W_res)
-        if spec_rad != 0:
+        if self.spectral_radius is not None and spec_rad != 0:
             self.W.W_res *= self.spectral_radius / spec_rad
     def forward(self, u, y=None, kq=False):
         len_timeseries = u.size()[0]

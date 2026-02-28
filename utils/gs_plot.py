@@ -22,9 +22,25 @@ def _encode_column(values):
 
     Returns:
         (np.ndarray, tick_labels_or_None)
-        If all values are numeric, tick_labels is None.
+        If all values are numeric (or numeric + None), tick_labels is None
+        and the column is treated as numeric (None maps to a sentinel value
+        below the minimum so it doesn't get prioritised as categorical).
         Otherwise, tick_labels is a list of display strings for each integer index.
     """
+    has_none = any(v is None for v in values)
+    non_none = [v for v in values if v is not None]
+
+    # If non-None values are all numeric, keep column numeric
+    if has_none and non_none:
+        try:
+            numeric = np.array(non_none, dtype=float)
+            # Place None below the numeric range so it sorts first on the axis
+            sentinel = float(np.min(numeric)) - 1.0
+            encoded = np.array([sentinel if v is None else float(v) for v in values])
+            return encoded, None
+        except (ValueError, TypeError):
+            pass
+
     try:
         encoded = np.array(values, dtype=float)
         return encoded, None

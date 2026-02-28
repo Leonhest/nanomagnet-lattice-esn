@@ -5,6 +5,7 @@ import os
 import sys
 
 import numpy as np
+from scipy.linalg import schur
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -76,12 +77,27 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
 
     sr = np.max(np.abs(eigvals))
 
-    # Inverse of eigenvector matrix (for eigenvalue removal reconstruction)
-    # Use pseudoinverse as fallback when V is singular (repeated/defective eigenvalues)
-    try:
-        V_inv = np.linalg.inv(eigvecs)
-    except np.linalg.LinAlgError:
-        V_inv = np.linalg.pinv(eigvecs)
+    # Schur decomposition for eigenvalue removal: W = Q @ T @ Q^H
+    # Q is unitary (always invertible), so reconstruction is exact.
+    # Removing eigenvalue k: W_modified = W - λ_k * q_k @ q_k^H
+    T_schur, Q_schur = schur(W_res, output='complex')
+    schur_eigvals = np.diag(T_schur)
+
+    # Match Schur eigenvalues to eigen-ordering (sorted by descending |λ|)
+    eig_to_schur = []
+    used_schur = set()
+    for i in range(n):
+        best_j = -1
+        best_dist = np.inf
+        for j in range(n):
+            if j in used_schur:
+                continue
+            dist = np.abs(eigvals[i] - schur_eigvals[j])
+            if dist < best_dist:
+                best_dist = dist
+                best_j = j
+        eig_to_schur.append(best_j)
+        used_schur.add(best_j)
 
     # Conjugate pair mapping: pairs[k] = index of conjugate partner, -1 if real
     conj_pairs = _find_conjugate_pairs(eigvals)
@@ -111,7 +127,8 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     # Local Kuramoto per node: R_j = |mean(exp(i*angle(v[j and neighbors])))|
     # Measures local phase coherence of node WITH its neighborhood.
     # Adjacency mask for neighbors (symmetric union of in/out edges, no self-loops)
-    adj = ((W_res != 0) | (W_res.T != 0))
+    adj_threshold = 1e-8 * np.max(np.abs(W_res))
+    adj = ((np.abs(W_res) > adj_threshold) | (np.abs(W_res.T) > adj_threshold))
     np.fill_diagonal(adj, False)
     # Degree per node (+1 for the node itself)
     deg_plus1 = adj.sum(axis=1).astype(float) + 1.0
@@ -166,9 +183,12 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         "m": m,
         "activity": activity_grid,
         "total_local_kuramoto": total_local_kuramoto_grid,
-        "V_inv_re": V_inv.real.tolist(),
-        "V_inv_im": V_inv.imag.tolist(),
+        "Q_re": Q_schur.real.tolist(),
+        "Q_im": Q_schur.imag.tolist(),
+        "eig_to_schur": eig_to_schur,
         "conj_pairs": conj_pairs,
+        "save_dir": os.path.dirname(os.path.abspath(save_path or "eigvec_explorer.html")),
+        "W_res_original": W_res.tolist(),
     }
 
     # --- Build Plotly figure --------------------------------------------------
@@ -433,7 +453,6 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         } else {
             el.textContent = '';
         }
-        document.getElementById('download-btn').disabled = (removedSet.size === 0);
     }
 
     function toggleRemoval(idx) {
@@ -479,67 +498,42 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     }
 
     function reconstructMatrix() {
-        // W = sum_k lambda_k * v_k (outer) V_inv[k,:]  for k not in removedSet
-        // v_k is column k of V, reconstructed from mag + phase grids
-        // V_inv[k,:] is row k of V_inv, from embedded V_inv_re + V_inv_im
-        var nn = n;  // matrix dimension = n
-        // Initialize real n x n result
+        // Schur-based: W_modified = W_original - sum_{k removed} λ_k * q_k @ q_k^H
+        // Q is unitary so reconstruction is exact.
+        var nn = n;
         var W = [];
         for (var i = 0; i < nn; i++) {
-            W.push(new Float64Array(nn));
+            W.push(data.W_res_original[i].slice());
         }
 
-        for (var k = 0; k < nn; k++) {
-            if (removedSet.has(k)) continue;
+        removedSet.forEach(function(eigIdx) {
+            var si = data.eig_to_schur[eigIdx];
+            var lam_re = data.eigvals_re[eigIdx];
+            var lam_im = data.eigvals_im[eigIdx];
 
-            // eigenvalue k
-            var lam_re = data.eigvals_re[k];
-            var lam_im = data.eigvals_im[k];
-
-            // eigenvector column k: v_k[j] = mag[k][row][col] * exp(i * phase[k][row][col])
-            // V_inv row k: V_inv[k][j] = V_inv_re[k][j] + i * V_inv_im[k][j]
-
-            // Rank-1 update: W += real( lam_k * v_k * V_inv[k,:] )
-            // For each (i,j): W[i][j] += real( lam_k * v_k[i] * V_inv_k[j] )
-
-            // Pre-flatten v_k from mag/phase grids
-            var v_re = new Float64Array(nn);
-            var v_im = new Float64Array(nn);
-            for (var row = 0; row < m; row++) {
-                for (var col = 0; col < m; col++) {
-                    var idx = row * m + col;
-                    var mag = data.mag[k][row][col];
-                    var phase = data.phase[k][row][col];
-                    v_re[idx] = mag * Math.cos(phase);
-                    v_im[idx] = mag * Math.sin(phase);
-                }
-            }
-
-            // V_inv row k
-            var vinv_re = data.V_inv_re[k];
-            var vinv_im = data.V_inv_im[k];
-
+            // Schur vector q = Q[:, si]
+            // Subtract rank-1: W -= real(λ * q @ q^H)
+            // W[i][j] -= real(λ * q[i] * conj(q[j]))
             for (var i = 0; i < nn; i++) {
-                // lam * v_k[i] = (lam_re + i*lam_im)(v_re[i] + i*v_im[i])
-                var lv_re = lam_re * v_re[i] - lam_im * v_im[i];
-                var lv_im = lam_re * v_im[i] + lam_im * v_re[i];
+                var qi_re = data.Q_re[i][si];
+                var qi_im = data.Q_im[i][si];
+                // λ * q[i]
+                var lq_re = lam_re * qi_re - lam_im * qi_im;
+                var lq_im = lam_re * qi_im + lam_im * qi_re;
 
                 for (var j = 0; j < nn; j++) {
-                    // real( (lv_re + i*lv_im)(vinv_re[j] + i*vinv_im[j]) )
-                    W[i][j] += lv_re * vinv_re[j] - lv_im * vinv_im[j];
+                    var qj_re = data.Q_re[j][si];
+                    var qj_im = data.Q_im[j][si];
+                    // real((lq)(conj(qj))) = lq_re*qj_re + lq_im*qj_im
+                    W[i][j] -= lq_re * qj_re + lq_im * qj_im;
                 }
             }
-        }
+        });
 
-        // Convert to regular arrays
-        var result = [];
-        for (var i = 0; i < nn; i++) {
-            result.push(Array.from(W[i]));
-        }
-        return result;
+        return W;
     }
 
-    function downloadJSON() {
+    function buildJSON() {
         var W = reconstructMatrix();
 
         // Compute new spectral radius (max |eigenvalue| of kept eigenvalues)
@@ -561,7 +555,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
             };
         });
 
-        var output = {
+        return {
             type: "full_matrix",
             size: n,
             grid_shape: [m, m],
@@ -575,12 +569,35 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
                 new_spectral_radius: newSR
             }
         };
+    }
 
-        var blob = new Blob([JSON.stringify(output)], {type: 'application/json'});
+    async function downloadJSON() {
+        var output = buildJSON();
+        var jsonStr = JSON.stringify(output);
+        var filename = 'W_res_' + removedSet.size + 'removed.json';
+
+        // Try File System Access API to save in the same directory
+        if (window.showSaveFilePicker) {
+            try {
+                var handle = await showSaveFilePicker({
+                    suggestedName: filename,
+                    types: [{description: 'JSON', accept: {'application/json': ['.json']}}]
+                });
+                var writable = await handle.createWritable();
+                await writable.write(jsonStr);
+                await writable.close();
+                return;
+            } catch (e) {
+                if (e.name === 'AbortError') return; // user cancelled
+            }
+        }
+
+        // Fallback: regular download
+        var blob = new Blob([jsonStr], {type: 'application/json'});
         var url = URL.createObjectURL(blob);
         var a = document.createElement('a');
         a.href = url;
-        a.download = 'W_res_modified_' + removedSet.size + 'removed.json';
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -806,7 +823,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
   <button id="activity-btn">Total Activity</button>
   <button id="kuramoto-btn">Color: |&lambda;|</button>
   <button id="removal-btn">Removal Mode</button>
-  <button id="download-btn" disabled>Download Modified W_res</button>
+  <button id="download-btn">Download W_res JSON</button>
   <span id="removal-count"></span>
 </div>
 <script type="application/json" id="eigvec-data">

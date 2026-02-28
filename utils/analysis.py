@@ -16,7 +16,7 @@ import yaml
 # Allow running as ``python -m utils.analysis`` from project root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from matrix import Matrix, load_tile_with_metadata, tile_to_lattice, plot_tile
+from matrix import Matrix, load_tile_with_metadata, tile_to_lattice, plot_tile, _is_full_matrix_json, load_full_matrix
 from utils.formula import spectral_radius, calculate_total_recurrent_influence, calculate_avg_degree
 
 
@@ -347,6 +347,33 @@ def analyze_tile(tile_path, *, lattice_size=400, tile_shape=None,
 
 
 # ---------------------------------------------------------------------------
+# Full matrix JSON wrapper
+# ---------------------------------------------------------------------------
+
+def analyze_full_matrix(json_path, *, save_path=None, show=True, dpi=300):
+    """Analyse a full-matrix JSON exported from eigenvector removal."""
+    W_res, metadata = load_full_matrix(json_path)
+
+    if save_path is None:
+        stem = os.path.splitext(json_path)[0]
+        save_path = f"{stem}_analysis.png"
+
+    meta = {"File": os.path.basename(json_path)}
+    meta.update(metadata)
+
+    stats = analyze_reservoir(
+        W_res,
+        metadata=meta,
+        title=f"Full Matrix Analysis — {os.path.basename(json_path)}",
+        save_path=save_path,
+        show=show,
+        dpi=dpi,
+    )
+    stats["full_matrix_path"] = json_path
+    return stats
+
+
+# ---------------------------------------------------------------------------
 # Config-based analysis
 # ---------------------------------------------------------------------------
 
@@ -418,10 +445,30 @@ def analyze_from_config(config_path, *, save_dir=None, show=True, eigvec=False,
 
         print(f"\n--- Analyzing: {label} ---")
 
-        # Check if type is a tile path
+        # Check if type is a JSON path (tile or full matrix)
         wtype = W_args.get("W_res_args", {}).get("type", "")
         stats = {}
-        if isinstance(wtype, str) and wtype.endswith(".json"):
+        if isinstance(wtype, str) and wtype.endswith(".json") and _is_full_matrix_json(wtype):
+            W_res_np, fm_meta = load_full_matrix(wtype)
+            if not eigvec_only:
+                save_path = os.path.join(save_dir, f"analysis_{safe_label}.png")
+                meta = {k.split(".")[-1]: v for k, v in combo.items()} if combo else {}
+                meta["type"] = "full_matrix"
+                meta.update(fm_meta)
+                stats = analyze_reservoir(
+                    W_res_np,
+                    metadata=meta,
+                    title=f"Full Matrix Analysis — {label}",
+                    save_path=save_path,
+                    show=show,
+                )
+            if eigvec or eigvec_only:
+                from utils.eigvec_viz import eigenvector_viz
+                eigvec_path = os.path.join(save_dir, f"eigvec_{safe_label}.html")
+                eigenvector_viz(W_res_np, target_sr=target_sr,
+                                save_path=eigvec_path,
+                                title=f"Eigenvector Explorer — {label}")
+        elif isinstance(wtype, str) and wtype.endswith(".json"):
             if not eigvec_only:
                 save_path = os.path.join(save_dir, f"analysis_{safe_label}.png")
                 stats = analyze_tile(
@@ -488,7 +535,23 @@ if __name__ == "__main__":
     sr_arg = next((a for a in args if a.startswith("--sr=")), None)
     target_sr = float(sr_arg.split("=")[1]) if sr_arg else None
 
-    if input_path.endswith(".json"):
+    if input_path.endswith(".json") and _is_full_matrix_json(input_path):
+        W_res_np, fm_meta = load_full_matrix(input_path)
+        if not eigvec_only:
+            stats = analyze_full_matrix(input_path, show=show)
+            print(f"\nSpectral radius: {stats['spectral_radius']:.4f}")
+            print(f"Avg degree: {stats['avg_degree']:.2f}")
+            if stats["avg_tri"] is not None:
+                print(f"Avg TRI: {stats['avg_tri']:.4f}")
+
+        if do_eigvec or eigvec_only:
+            from utils.eigvec_viz import eigenvector_viz
+            stem = os.path.splitext(input_path)[0]
+            eigenvector_viz(W_res_np, target_sr=target_sr,
+                            save_path=f"{stem}_eigvec.html",
+                            title=f"Eigenvector Explorer — {os.path.basename(input_path)}")
+
+    elif input_path.endswith(".json"):
         if not eigvec_only:
             stats = analyze_tile(input_path, lattice_size=lattice_size, show=show)
             print(f"\nSpectral radius: {stats['spectral_radius']:.4f}")
