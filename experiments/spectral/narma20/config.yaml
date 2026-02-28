@@ -5,7 +5,7 @@ plot_deciles: False
 data:
   name: NARMA
   load: True
-  system_order: 10
+  system_order: 20
   sample_len: 6250
   split_ratio: 0.4
   val_ratio: 0.5

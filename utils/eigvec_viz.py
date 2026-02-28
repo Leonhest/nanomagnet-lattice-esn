@@ -98,13 +98,12 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
 
     # --- Resolvent computations -----------------------------------------------
     I = np.eye(n)
-    # z=0.91: (0.91*I - W)^{-1}
-    z1 = 0.91
-    res_inv_z1 = np.linalg.inv(z1 * I - W_res)
+    # z=1: (I - W)^{-1}
+    res_inv_z1 = np.linalg.inv(I - W_res)
     res_z1 = (res_inv_z1 @ np.ones(n)).reshape(m, m).tolist()
 
-    # z=0.91*e^{i*0.1}: complex resolvent
-    z2 = 0.91 * np.exp(1j * 0.1)
+    # z=e^{i*0.1}: complex resolvent
+    z2 = np.exp(1j * 0.1)
     res_z_complex = np.linalg.inv(z2 * I - W_res) @ np.ones(n)
     res_z_mag = np.abs(res_z_complex).reshape(m, m).tolist()
     res_z_phase = np.angle(res_z_complex).reshape(m, m).tolist()
@@ -112,7 +111,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     # Local phase coherence of resolvent phase
     res_z_local_r = _local_kuramoto(np.angle(res_z_complex)).reshape(m, m).tolist()
 
-    # diag((0.91*I - W)^{-1})  — self-influence per node
+    # diag((I - W)^{-1})  — self-influence per node
     res_diag = np.diag(res_inv_z1).reshape(m, m).tolist()
 
     # Relative self-influence: |R_jj| / Σ_k |R_jk|  per node
@@ -154,11 +153,11 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
             f"Magnitude |v| \u2014 \u03bb\u2080 = {eigvals[0].real:.4f}{eigvals[0].imag:+.4f}j",
             "Local Phase Coherence R",
             f"Phase \u2220v \u2014 \u03bb\u2080 = {eigvals[0].real:.4f}{eigvals[0].imag:+.4f}j",
-            "(0.91I \u2212 W)\u207b\u00b9 \u00b7 1",
-            "|(0.91e\u2071\u2070\u00b7\u00b9I \u2212 W)\u207b\u00b9 \u00b7 1|",
-            "\u2220(0.91e\u2071\u2070\u00b7\u00b9I \u2212 W)\u207b\u00b9 \u00b7 1",
+            "(I \u2212 W)\u207b\u00b9 \u00b7 1",
+            "|(e\u2071\u2070\u00b7\u00b9I \u2212 W)\u207b\u00b9 \u00b7 1|",
+            "\u2220(e\u2071\u2070\u00b7\u00b9I \u2212 W)\u207b\u00b9 \u00b7 1",
             "Resolvent Local Phase Coherence",
-            "diag (0.91I \u2212 W)\u207b\u00b9",
+            "diag (I \u2212 W)\u207b\u00b9",
             "|R\u2c7c\u2c7c| / \u03a3\u2096|R\u2c7c\u2096|",
         ],
         horizontal_spacing=0.06,
@@ -299,7 +298,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         row=3, col=4,
     )
 
-    # Trace 10: diag((0.91I - W)^{-1})  (row=4, col=1)
+    # Trace 10: diag((I - W)^{-1})  (row=4, col=1)
     fig.add_trace(
         go.Heatmap(
             z=res_diag, colorscale="RdBu_r", zmid=0,
