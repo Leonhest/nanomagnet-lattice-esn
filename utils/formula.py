@@ -19,8 +19,8 @@ def calculate_total_recurrent_influence(W_res):
 
     TRI(j) = |R_jj| / Σ_k |R_jk|
 
-    where R = (zI - W)^{-1} and z = avg in-degree.  This gives the fraction
-    of total influence on node j that comes from itself.
+    where R = (I - W)^{-1}.  This gives the fraction of total influence
+    on node j that comes from itself.
 
     Args:
         W_res (np.ndarray): The reservoir adjacency matrix.
@@ -32,10 +32,8 @@ def calculate_total_recurrent_influence(W_res):
     n_reservoir = W_res.shape[0]
     I = np.identity(n_reservoir)
 
-    z = calculate_avg_degree(W_res)
-
     try:
-        R = np.linalg.inv(z * I - W_res)
+        R = np.linalg.inv(I - W_res)
         diag_abs = np.abs(np.diag(R))
         row_sums = np.sum(np.abs(R), axis=1)
         return diag_abs / row_sums

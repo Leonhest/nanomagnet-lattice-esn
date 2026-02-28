@@ -12,6 +12,32 @@ from plotly.subplots import make_subplots
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
+def _find_conjugate_pairs(eigvals):
+    """Return list where pairs[k] = index of conjugate partner, -1 if real."""
+    n = len(eigvals)
+    pairs = [-1] * n
+    used = set()
+    for i in range(n):
+        if i in used or np.abs(eigvals[i].imag) < 1e-10:
+            continue
+        conj = np.conj(eigvals[i])
+        best_j = -1
+        best_dist = np.inf
+        for j in range(n):
+            if j == i or j in used:
+                continue
+            dist = np.abs(eigvals[j] - conj)
+            if dist < best_dist:
+                best_dist = dist
+                best_j = j
+        if best_j >= 0 and best_dist < 1e-8:
+            pairs[i] = best_j
+            pairs[best_j] = i
+            used.add(i)
+            used.add(best_j)
+    return pairs
+
+
 def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector Explorer"):
     """Interactive eigenvalue/eigenvector explorer -> standalone HTML.
 
@@ -49,6 +75,16 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     eigvecs = eigvecs[:, order]
 
     sr = np.max(np.abs(eigvals))
+
+    # Inverse of eigenvector matrix (for eigenvalue removal reconstruction)
+    # Use pseudoinverse as fallback when V is singular (repeated/defective eigenvalues)
+    try:
+        V_inv = np.linalg.inv(eigvecs)
+    except np.linalg.LinAlgError:
+        V_inv = np.linalg.pinv(eigvecs)
+
+    # Conjugate pair mapping: pairs[k] = index of conjugate partner, -1 if real
+    conj_pairs = _find_conjugate_pairs(eigvals)
 
     # Pre-compute magnitude and phase grids for every eigenvector
     mag_grids = []
@@ -130,6 +166,9 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         "m": m,
         "activity": activity_grid,
         "total_local_kuramoto": total_local_kuramoto_grid,
+        "V_inv_re": V_inv.real.tolist(),
+        "V_inv_im": V_inv.imag.tolist(),
+        "conj_pairs": conj_pairs,
     }
 
     # --- Build Plotly figure --------------------------------------------------
@@ -141,7 +180,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     fig = make_subplots(
         rows=4, cols=4,
         column_widths=[0.25, 0.25, 0.25, 0.25],
-        row_heights=[0.30, 0.30, 0.25, 0.15],
+        row_heights=[0.25, 0.25, 0.25, 0.25],
         specs=[
             [{"rowspan": 2, "colspan": 2}, None, {"type": "heatmap"}, {"type": "heatmap"}],
             [None, None, {"type": "heatmap"}, None],
@@ -200,7 +239,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
                 size=7,
                 color=np.abs(eigvals).tolist(),
                 colorscale="Viridis",
-                colorbar=dict(title="|\u03bb|", x=-0.08, len=0.30, y=0.73, thickness=12),
+                colorbar=dict(title="|\u03bb|", x=-0.08, len=0.30, y=0.77, thickness=12),
                 line=dict(width=line_widths, color=line_colors),
             ),
             text=hover_text, hoverinfo="text",
@@ -213,7 +252,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     fig.add_trace(
         go.Heatmap(
             z=mag_grids[0], colorscale="Viridis",
-            colorbar=dict(title="|v|", x=0.74, len=0.20, y=0.89, thickness=12),
+            colorbar=dict(title="|v|", x=0.74, len=0.19, y=0.905, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>|v|=%{z:.4f}<extra></extra>",
         ),
         row=1, col=3,
@@ -237,7 +276,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         go.Heatmap(
             z=phase_grids[0], colorscale=phase_colorscale,
             zmin=-np.pi, zmax=np.pi,
-            colorbar=dict(title="\u2220v", x=0.74, len=0.20, y=0.58, thickness=12),
+            colorbar=dict(title="\u2220v", x=0.74, len=0.19, y=0.635, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>\u2220v=%{z:.4f}<extra></extra>",
         ),
         row=2, col=3,
@@ -248,7 +287,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         go.Heatmap(
             z=local_kuramoto_grids[0], colorscale="Viridis",
             zmin=0, zmax=1,
-            colorbar=dict(title="R", x=1.01, len=0.20, y=0.89, thickness=12),
+            colorbar=dict(title="R", x=1.01, len=0.19, y=0.905, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>R=%{z:.4f}<extra></extra>",
         ),
         row=1, col=4,
@@ -260,7 +299,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     fig.add_trace(
         go.Heatmap(
             z=res_z1, colorscale="RdBu_r", zmid=0,
-            colorbar=dict(title="val", x=0.21, len=0.17, y=0.29, thickness=12),
+            colorbar=dict(title="val", x=0.21, len=0.19, y=0.365, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>val=%{z:.4f}<extra></extra>",
         ),
         row=3, col=1,
@@ -270,7 +309,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     fig.add_trace(
         go.Heatmap(
             z=res_z_mag, colorscale="Viridis",
-            colorbar=dict(title="|val|", x=0.47, len=0.17, y=0.29, thickness=12),
+            colorbar=dict(title="|val|", x=0.47, len=0.19, y=0.365, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>|val|=%{z:.4f}<extra></extra>",
         ),
         row=3, col=2,
@@ -281,7 +320,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         go.Heatmap(
             z=res_z_phase, colorscale=phase_colorscale,
             zmin=-np.pi, zmax=np.pi,
-            colorbar=dict(title="\u2220", x=0.74, len=0.17, y=0.29, thickness=12),
+            colorbar=dict(title="\u2220", x=0.74, len=0.19, y=0.365, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>\u2220=%{z:.4f}<extra></extra>",
         ),
         row=3, col=3,
@@ -292,7 +331,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         go.Heatmap(
             z=res_z_local_r, colorscale="Viridis",
             zmin=0, zmax=1,
-            colorbar=dict(title="R", x=1.01, len=0.17, y=0.29, thickness=12),
+            colorbar=dict(title="R", x=1.01, len=0.19, y=0.365, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>R=%{z:.4f}<extra></extra>",
         ),
         row=3, col=4,
@@ -302,7 +341,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     fig.add_trace(
         go.Heatmap(
             z=res_diag, colorscale="RdBu_r", zmid=0,
-            colorbar=dict(title="diag", x=0.21, len=0.12, y=0.06, thickness=12),
+            colorbar=dict(title="diag", x=0.21, len=0.19, y=0.095, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>val=%{z:.4f}<extra></extra>",
         ),
         row=4, col=1,
@@ -313,7 +352,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         go.Heatmap(
             z=res_rel_self, colorscale="Viridis",
             zmin=0, zmax=1,
-            colorbar=dict(title="rel", x=0.47, len=0.12, y=0.06, thickness=12),
+            colorbar=dict(title="rel", x=0.47, len=0.19, y=0.095, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>rel=%{z:.4f}<extra></extra>",
         ),
         row=4, col=2,
@@ -329,7 +368,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
 
     fig.update_layout(
         title=dict(text=title, x=0.5),
-        height=1100,
+        height=1150,
         margin=dict(l=80, r=30, t=80, b=40),
         showlegend=True,
         legend=dict(x=0.0, y=1.0, yanchor="top", orientation="h"),
@@ -356,6 +395,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     var data = JSON.parse(document.getElementById('eigvec-data').textContent);
     var plot = document.getElementById('eigvec-plot');
     var n = data.eigvals_re.length;
+    var m = data.m;
 
     var phaseCS = [
         [0.0,  'rgb(225,216,226)'],
@@ -373,6 +413,10 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
 
     var currentIdx = 0;
 
+    // --- Removal mode state ---
+    var removalMode = false;
+    var removedSet = new Set();
+
     function eigenLabel(idx) {
         var re = data.eigvals_re[idx].toFixed(4);
         var im = data.eigvals_im[idx] >= 0
@@ -382,10 +426,188 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         return '\\u03bb' + idx + ' = ' + re + im + 'j  |\\u03bb| = ' + abs_val;
     }
 
-    // Click eigenvalue -> show that eigenvector
+    function updateRemovalCount() {
+        var el = document.getElementById('removal-count');
+        if (removedSet.size > 0) {
+            el.textContent = removedSet.size + ' eigenvalue(s) removed';
+        } else {
+            el.textContent = '';
+        }
+        document.getElementById('download-btn').disabled = (removedSet.size === 0);
+    }
+
+    function toggleRemoval(idx) {
+        if (removedSet.has(idx)) {
+            removedSet.delete(idx);
+            // Also remove conjugate partner
+            var conj = data.conj_pairs[idx];
+            if (conj >= 0) removedSet.delete(conj);
+        } else {
+            removedSet.add(idx);
+            // Also add conjugate partner
+            var conj = data.conj_pairs[idx];
+            if (conj >= 0) removedSet.add(conj);
+        }
+        updateRemovalVisuals();
+        updateRemovalCount();
+    }
+
+    function updateRemovalVisuals() {
+        // Update marker styles: removed eigenvalues get red X, others normal
+        var symbols = new Array(n).fill('circle');
+        var sizes = new Array(n).fill(7);
+        var widths = new Array(n).fill(0);
+        var colors = new Array(n).fill('rgba(0,0,0,0)');
+
+        removedSet.forEach(function(idx) {
+            symbols[idx] = 'x';
+            sizes[idx] = 10;
+        });
+
+        // Keep current selection highlight if not in removal mode
+        if (!removalMode && !document.getElementById('activity-btn').classList.contains('active')) {
+            widths[currentIdx] = 2.5;
+            colors[currentIdx] = 'red';
+        }
+
+        Plotly.restyle(plot, {
+            'marker.symbol': [symbols],
+            'marker.size': [sizes],
+            'marker.line.width': [widths],
+            'marker.line.color': [colors]
+        }, [2]);
+    }
+
+    function reconstructMatrix() {
+        // W = sum_k lambda_k * v_k (outer) V_inv[k,:]  for k not in removedSet
+        // v_k is column k of V, reconstructed from mag + phase grids
+        // V_inv[k,:] is row k of V_inv, from embedded V_inv_re + V_inv_im
+        var nn = n;  // matrix dimension = n
+        // Initialize real n x n result
+        var W = [];
+        for (var i = 0; i < nn; i++) {
+            W.push(new Float64Array(nn));
+        }
+
+        for (var k = 0; k < nn; k++) {
+            if (removedSet.has(k)) continue;
+
+            // eigenvalue k
+            var lam_re = data.eigvals_re[k];
+            var lam_im = data.eigvals_im[k];
+
+            // eigenvector column k: v_k[j] = mag[k][row][col] * exp(i * phase[k][row][col])
+            // V_inv row k: V_inv[k][j] = V_inv_re[k][j] + i * V_inv_im[k][j]
+
+            // Rank-1 update: W += real( lam_k * v_k * V_inv[k,:] )
+            // For each (i,j): W[i][j] += real( lam_k * v_k[i] * V_inv_k[j] )
+
+            // Pre-flatten v_k from mag/phase grids
+            var v_re = new Float64Array(nn);
+            var v_im = new Float64Array(nn);
+            for (var row = 0; row < m; row++) {
+                for (var col = 0; col < m; col++) {
+                    var idx = row * m + col;
+                    var mag = data.mag[k][row][col];
+                    var phase = data.phase[k][row][col];
+                    v_re[idx] = mag * Math.cos(phase);
+                    v_im[idx] = mag * Math.sin(phase);
+                }
+            }
+
+            // V_inv row k
+            var vinv_re = data.V_inv_re[k];
+            var vinv_im = data.V_inv_im[k];
+
+            for (var i = 0; i < nn; i++) {
+                // lam * v_k[i] = (lam_re + i*lam_im)(v_re[i] + i*v_im[i])
+                var lv_re = lam_re * v_re[i] - lam_im * v_im[i];
+                var lv_im = lam_re * v_im[i] + lam_im * v_re[i];
+
+                for (var j = 0; j < nn; j++) {
+                    // real( (lv_re + i*lv_im)(vinv_re[j] + i*vinv_im[j]) )
+                    W[i][j] += lv_re * vinv_re[j] - lv_im * vinv_im[j];
+                }
+            }
+        }
+
+        // Convert to regular arrays
+        var result = [];
+        for (var i = 0; i < nn; i++) {
+            result.push(Array.from(W[i]));
+        }
+        return result;
+    }
+
+    function downloadJSON() {
+        var W = reconstructMatrix();
+
+        // Compute new spectral radius (max |eigenvalue| of kept eigenvalues)
+        var newSR = 0;
+        for (var k = 0; k < n; k++) {
+            if (!removedSet.has(k)) {
+                var abs_val = data.eigvals_abs[k];
+                if (abs_val > newSR) newSR = abs_val;
+            }
+        }
+
+        var removedIndices = Array.from(removedSet).sort(function(a,b){return a-b;});
+        var removedEigvals = removedIndices.map(function(idx) {
+            return {
+                index: idx,
+                real: data.eigvals_re[idx],
+                imag: data.eigvals_im[idx],
+                abs: data.eigvals_abs[idx]
+            };
+        });
+
+        var output = {
+            type: "full_matrix",
+            size: n,
+            grid_shape: [m, m],
+            W_res: W,
+            metadata: {
+                source: "eigenvalue_removal",
+                n_eigenvalues_removed: removedSet.size,
+                removed_eigenvalue_indices: removedIndices,
+                removed_eigenvalues: removedEigvals,
+                original_spectral_radius: data.eigvals_abs[0],
+                new_spectral_radius: newSR
+            }
+        };
+
+        var blob = new Blob([JSON.stringify(output)], {type: 'application/json'});
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'W_res_modified_' + removedSet.size + 'removed.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    // --- Removal mode toggle ---
+    document.getElementById('removal-btn').addEventListener('click', function() {
+        removalMode = !removalMode;
+        this.classList.toggle('active', removalMode);
+        this.textContent = removalMode ? 'Removal Mode ON' : 'Removal Mode';
+        updateRemovalVisuals();
+    });
+
+    // --- Download button ---
+    document.getElementById('download-btn').addEventListener('click', downloadJSON);
+
+    // Click eigenvalue -> show that eigenvector OR toggle removal
     plot.on('plotly_click', function(eventData) {
         if (eventData.points[0].curveNumber !== 2) return;
         var idx = eventData.points[0].pointIndex;
+
+        if (removalMode) {
+            toggleRemoval(idx);
+            return;
+        }
+
         currentIdx = idx;
 
         // Update magnitude (trace 3), phase (trace 4), local R (trace 5)
@@ -393,12 +615,23 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         Plotly.restyle(plot, {z: [data.phase[idx]], colorscale: [phaseCS], zmin: [-Math.PI], zmax: [Math.PI]}, [4]);
         Plotly.restyle(plot, {z: [data.local_kuramoto[idx]]}, [5]);
 
-        // Highlight selected eigenvalue
+        // Highlight selected eigenvalue (preserve removal visuals)
         var widths = new Array(n).fill(0);
         var colors = new Array(n).fill('rgba(0,0,0,0)');
         widths[idx] = 2.5;
         colors[idx] = 'red';
-        Plotly.restyle(plot, {'marker.line.width': [widths], 'marker.line.color': [colors]}, [2]);
+        var symbols = new Array(n).fill('circle');
+        var sizes = new Array(n).fill(7);
+        removedSet.forEach(function(ri) {
+            symbols[ri] = 'x';
+            sizes[ri] = 10;
+        });
+        Plotly.restyle(plot, {
+            'marker.line.width': [widths],
+            'marker.line.color': [colors],
+            'marker.symbol': [symbols],
+            'marker.size': [sizes]
+        }, [2]);
 
         // Update subplot titles
         var label = eigenLabel(idx);
@@ -426,7 +659,6 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
 
         if (isActive) {
             Plotly.restyle(plot, {z: [data.activity]}, [3]);
-            var m = data.m;
             var blank = [];
             for (var r = 0; r < m; r++) {
                 var row = [];
@@ -438,7 +670,18 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
 
             var widths = new Array(n).fill(0);
             var colors = new Array(n).fill('rgba(0,0,0,0)');
-            Plotly.restyle(plot, {'marker.line.width': [widths], 'marker.line.color': [colors]}, [2]);
+            var symbols = new Array(n).fill('circle');
+            var sizes = new Array(n).fill(7);
+            removedSet.forEach(function(ri) {
+                symbols[ri] = 'x';
+                sizes[ri] = 10;
+            });
+            Plotly.restyle(plot, {
+                'marker.line.width': [widths],
+                'marker.line.color': [colors],
+                'marker.symbol': [symbols],
+                'marker.size': [sizes]
+            }, [2]);
 
             var annotations = plot.layout.annotations || [];
             if (annotations.length >= 10) {
@@ -457,7 +700,18 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
             var colors = new Array(n).fill('rgba(0,0,0,0)');
             widths[idx] = 2.5;
             colors[idx] = 'red';
-            Plotly.restyle(plot, {'marker.line.width': [widths], 'marker.line.color': [colors]}, [2]);
+            var symbols = new Array(n).fill('circle');
+            var sizes = new Array(n).fill(7);
+            removedSet.forEach(function(ri) {
+                symbols[ri] = 'x';
+                sizes[ri] = 10;
+            });
+            Plotly.restyle(plot, {
+                'marker.line.width': [widths],
+                'marker.line.color': [colors],
+                'marker.symbol': [symbols],
+                'marker.size': [sizes]
+            }, [2]);
 
             var re = data.eigvals_re[idx].toFixed(4);
             var im = data.eigvals_im[idx] >= 0
@@ -525,6 +779,25 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     background: #f5f5f5; font-size: 14px; font-weight: 600;
     transition: all 0.15s;
   }}
+  #removal-btn {{
+    padding: 8px 18px; margin-left: 16px; cursor: pointer;
+    border: 2px solid #b33; border-radius: 6px;
+    background: #f5f5f5; font-size: 14px; font-weight: 600;
+    color: #b33; transition: all 0.15s;
+  }}
+  #removal-btn:hover {{ background: #fdd; }}
+  #removal-btn.active {{ background: #b33; color: #fff; }}
+  #download-btn {{
+    padding: 8px 18px; margin-left: 8px; cursor: pointer;
+    border: 2px solid #36a; border-radius: 6px;
+    background: #f5f5f5; font-size: 14px; font-weight: 600;
+    color: #36a; transition: all 0.15s;
+  }}
+  #download-btn:hover {{ background: #def; }}
+  #download-btn:disabled {{ opacity: 0.4; cursor: default; }}
+  #removal-count {{
+    margin-left: 10px; font-size: 14px; color: #b33; font-weight: 600;
+  }}
 </style>
 </head>
 <body>
@@ -532,6 +805,9 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
   Click an eigenvalue on the spectrum to view its eigenvector as magnitude, phase, and local phase coherence heatmaps on the {m}&times;{m} lattice.
   <button id="activity-btn">Total Activity</button>
   <button id="kuramoto-btn">Color: |&lambda;|</button>
+  <button id="removal-btn">Removal Mode</button>
+  <button id="download-btn" disabled>Download Modified W_res</button>
+  <span id="removal-count"></span>
 </div>
 <script type="application/json" id="eigvec-data">
 {json.dumps(eigvec_data)}

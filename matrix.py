@@ -95,6 +95,25 @@ def _is_tile_path(value):
     return isinstance(value, str) and value.endswith(".json")
 
 
+def _is_full_matrix_json(path):
+    """Check if a JSON file contains a full matrix (from eigenvalue removal)."""
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+        return data.get("type") == "full_matrix"
+    except (json.JSONDecodeError, FileNotFoundError, TypeError):
+        return False
+
+
+def load_full_matrix(path):
+    """Load a full W_res matrix from JSON. Returns (np.ndarray, metadata_dict)."""
+    with open(path, "r") as f:
+        data = json.load(f)
+    W_res = np.array(data["W_res"], dtype=np.float64)
+    metadata = data.get("metadata", {})
+    return W_res, metadata
+
+
 def _node_to_json(node):
     """Convert a node (int or tuple) to a JSON-serializable form."""
     if isinstance(node, tuple):
@@ -136,7 +155,10 @@ class Matrix:
 
             wd = self.W_res_args["type"]
             skip_self = False
-            if _is_tile_path(wd):
+            if _is_tile_path(wd) and _is_full_matrix_json(wd):
+                W_res_np, _ = load_full_matrix(wd)
+                return torch.FloatTensor(W_res_np)
+            elif _is_tile_path(wd):
                 tile_G, tile_meta = load_tile_with_metadata(wd)
                 tile_rows, tile_cols = tile_meta["tile_shape"]
                 self.G_res = self._tile_from_graph(tile_G, m, n, tile_rows, tile_cols)
