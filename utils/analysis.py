@@ -17,7 +17,7 @@ import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from matrix import Matrix, load_tile_with_metadata, tile_to_lattice, plot_tile, _is_full_matrix_json, load_full_matrix
-from utils.formula import spectral_radius, calculate_total_recurrent_influence, calculate_avg_degree
+from utils.formula import spectral_radius, calculate_resolvent_metrics, calculate_avg_degree
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +68,7 @@ def analyze_reservoir(W_res, *, G_res=None, tile_G=None, metadata=None,
 
     # --- Precompute statistics -----------------------------------------------
     sr = spectral_radius(W_res)
-    tri = calculate_total_recurrent_influence(W_res)
+    tri, _tri_ratio = calculate_resolvent_metrics(W_res)
     avg_deg = calculate_avg_degree(W_res)
 
     # Sign counts

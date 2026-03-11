@@ -27,6 +27,7 @@ class ESN(nn.Module):
         len_timeseries = u.size()[0]
         X = torch.zeros(len_timeseries, self.hidden_nodes)
         x = torch.zeros(self.hidden_nodes)
+        self.f.reset(self.hidden_nodes)
 
 
         for t in range(len_timeseries):
@@ -84,6 +85,9 @@ class ESN(nn.Module):
                     state_input = state_input + self.W_back * u_test[start + t]
                 x = self.f(state_input)
 
+            # Save hysteresis state so free-run doesn't corrupt the true branch
+            saved_f_state = self.f.prev_output.clone() if hasattr(self.f, 'prev_output') and self.f.prev_output is not None else None
+
             # Free-run for prediction_horizon steps, record only the last prediction
             x_free = x.clone()
             for step in range(prediction_horizon - 1):
@@ -98,6 +102,10 @@ class ESN(nn.Module):
             final_pred = self.readout.model.predict(x_free.detach().numpy().reshape(1, -1))[0]
             predictions[trial] = final_pred
             ground_truths[trial] = u_test[start + window_len - 1]
+
+            # Restore hysteresis state to continue from the teacher-forced branch
+            if saved_f_state is not None:
+                self.f.prev_output = saved_f_state
 
             # Advance true state through the free-run portion for next trial
             for t in range(prediction_horizon):

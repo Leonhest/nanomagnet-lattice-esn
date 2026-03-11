@@ -12,6 +12,8 @@ def euclidean(x, y):
     """
     return sqrt(sum((a - b) ** 2 for a, b in zip(x, y)))
 
+
+
 def save_tile(tile_G, path, metadata=None):
     """Save a tile graph as JSON (edge list + metadata)."""
     nodes = list(tile_G.nodes())
@@ -157,6 +159,12 @@ class Matrix:
         return W_in
 
     def _init_W_res(self):
+        # Standalone dense Haar-random orthogonal matrix (no lattice structure)
+        if self.W_res_args["type"] == "orthogonal":
+            Q, R = np.linalg.qr(np.random.randn(self.size, self.size))
+            Q *= np.sign(np.diag(R))  # Haar-uniform correction
+            return torch.FloatTensor(Q.astype(np.float32))
+
         if self.W_res_args["type"] != "baseline-esn":
             m = int(sqrt(self.size))
             n = int(sqrt(self.size))

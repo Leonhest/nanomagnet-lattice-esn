@@ -55,6 +55,7 @@ optimization:
     sigma0: 0.3
     max_generations: 10
     pop_size: 20
+    bounds: [-1, 1]
   hyperneat:
     cppn_config_file: ../../cppn_config.txt
     generations: 10
