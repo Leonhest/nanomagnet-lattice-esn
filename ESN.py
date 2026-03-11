@@ -9,13 +9,16 @@ import os
 logger = logging.getLogger(__name__)
 from readout import Ridge 
 class ESN(nn.Module):
-    def __init__(self, W: Matrix, readout, spectral_radius, f, washout):
+    def __init__(self, W: Matrix, readout, spectral_radius, f, washout, training_noise=0, input_bias=None):
         super(ESN, self).__init__()
         self.W = W
         self.spectral_radius = spectral_radius
         self.f = f
         self.washout = washout
         self.readout = readout
+        self.training_noise = training_noise
+        self.input_bias = input_bias
+        self.W_back = W.W_back
         self.hidden_nodes = len(self.W.W_res)
         spec_rad = _spectral_radius(self.W.W_res)
         if self.spectral_radius is not None and spec_rad != 0:
@@ -24,10 +27,19 @@ class ESN(nn.Module):
         len_timeseries = u.size()[0]
         X = torch.zeros(len_timeseries, self.hidden_nodes)
         x = torch.zeros(self.hidden_nodes)
-        
+
 
         for t in range(len_timeseries):
-            x = self.f(self.W.W_in * u[t] + self.W.W_res.mv(x))
+            w_in_signal = self.input_bias if self.input_bias is not None else u[t]
+            state_input = self.W.W_in * w_in_signal + self.W.W_res.mv(x)
+            if y is not None and self.W_back is not None and t > 0:
+                state_input = state_input + self.W_back * y[t - 1]
+                if self.training_noise > 0:
+                    noise = torch.FloatTensor(self.hidden_nodes).uniform_(
+                        -self.training_noise, self.training_noise
+                    )
+                    state_input = state_input + noise
+            x = self.f(state_input)
             X[t] = x
 
         self.X = X
@@ -41,6 +53,62 @@ class ESN(nn.Module):
             # When kq=True, we just need to store X, don't compute readout
             return None
     
+    def closed_loop_test(self, u_test, prediction_horizon, teacher_forcing_len=1000):
+        """
+        Closed-loop free-run evaluation (Jaeger's approach).
+        Assumes readout is already trained and reservoir state is primed (self.X[-1]).
+
+        Splits u_test into consecutive windows of (teacher_forcing_len + prediction_horizon).
+        For each window:
+          1. Teacher-force for teacher_forcing_len steps
+          2. Free-run for prediction_horizon steps
+          3. Record only the final (84th) prediction
+
+        Returns (predictions, ground_truths) tensors of length num_trials.
+        """
+        window_len = teacher_forcing_len + prediction_horizon
+        num_trials = len(u_test) // window_len
+        predictions = torch.zeros(num_trials)
+        ground_truths = torch.zeros(num_trials)
+
+        x = self.X[-1].clone()
+
+        for trial in range(num_trials):
+            start = trial * window_len
+
+            # Teacher-force for teacher_forcing_len steps
+            for t in range(teacher_forcing_len):
+                w_in_signal = self.input_bias if self.input_bias is not None else u_test[start + t]
+                state_input = self.W.W_in * w_in_signal + self.W.W_res.mv(x)
+                if self.W_back is not None:
+                    state_input = state_input + self.W_back * u_test[start + t]
+                x = self.f(state_input)
+
+            # Free-run for prediction_horizon steps, record only the last prediction
+            x_free = x.clone()
+            for step in range(prediction_horizon - 1):
+                pred = self.readout.model.predict(x_free.detach().numpy().reshape(1, -1))[0]
+                u_pred = torch.tensor(pred, dtype=torch.float32).clamp(-1, 1)
+                w_in_signal = self.input_bias if self.input_bias is not None else u_pred
+                state_input = self.W.W_in * w_in_signal + self.W.W_res.mv(x_free)
+                if self.W_back is not None:
+                    state_input = state_input + self.W_back * u_pred
+                x_free = self.f(state_input)
+
+            final_pred = self.readout.model.predict(x_free.detach().numpy().reshape(1, -1))[0]
+            predictions[trial] = final_pred
+            ground_truths[trial] = u_test[start + window_len - 1]
+
+            # Advance true state through the free-run portion for next trial
+            for t in range(prediction_horizon):
+                w_in_signal = self.input_bias if self.input_bias is not None else u_test[start + teacher_forcing_len + t]
+                state_input = self.W.W_in * w_in_signal + self.W.W_res.mv(x)
+                if self.W_back is not None:
+                    state_input = state_input + self.W_back * u_test[start + teacher_forcing_len + t]
+                x = self.f(state_input)
+
+        return predictions, ground_truths
+
     def memory_capacity(self, washout, u_train, u_test, plot=False):
 
         output_nodes = int(1.4*self.hidden_nodes)

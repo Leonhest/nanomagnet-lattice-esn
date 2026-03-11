@@ -2,7 +2,7 @@ import logging
 
 from metric import kernel_quality, generalization, memory_capacity
 
-from runner.evaluation import train, test
+from runner.evaluation import train, test, test_closed_loop
 from runner.reservoir_stats import compute_reservoir_statistics
 
 logger = logging.getLogger(__name__)
@@ -16,10 +16,15 @@ def run(config, exp_path):
     model = config["esn"]["model"]
 
     _ = train(dataset.u_train, dataset.y_train, model)
-    test_nrmse = test(dataset.u_test, dataset.y_test, model)
+
+    if config["data"].get("closed_loop", False):
+        prediction_horizon = config["data"]["prediction_horizon"]
+        test_nrmse = test_closed_loop(dataset, model, prediction_horizon)
+    else:
+        test_nrmse = test(dataset.u_test, dataset.y_test, model)
 
     stats = compute_reservoir_statistics(model)
-    logger.info(f"Average Total Recurrent Influence: {stats['avg_total_recurrent_influence']}")
+    logger.info(f"Average TRI: {stats['avg_tri']:.6f}, Average TRI Ratio: {stats['avg_tri_ratio']:.6f}")
 
     if config.get("state_plot", False):
         model.plot_node_states(num_nodes=10, save_path=exp_path)

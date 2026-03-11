@@ -17,3 +17,7 @@
 
 5. **Orthogonal reservoirs**
    Use orthogonal weight matrices for the reservoir. Orthogonal matrices preserve norms and have all eigenvalues on the unit circle, providing stable dynamics without vanishing/exploding gradients and maximal memory capacity in theory.
+
+6. **Preisach-style hysteresis activation for nanomagnet modeling**
+   Replace `tanh` with a proper hysteresis operator where each node has coercivity and remanence parameters, modeling physical nanomagnet switching behavior. Unlike implicit hysteresis from high `β` + `w_self` (which is suppressed by spectral radius scaling), an explicit Preisach model gives each node an independent hysteresis loop regardless of the global SR constraint. This would make the ESN a more physically accurate model of nanomagnet lattice reservoirs.
+   *Implementation:* Add a new stateful activation class in `activation.py` that tracks each node's previous output and applies asymmetric switching thresholds (different thresholds for transitioning up vs down). Parameters: coercivity (width of hysteresis loop) and remanence (output level when input is zero). Wire it up as a new `f_args.type` option in `ConfigLoader`.

@@ -133,8 +133,16 @@ class Matrix:
         self.size = conf["size"]
         self.W_in_args = conf["W_in_args"]
         self.W_res_args = conf["W_res_args"]
+        self.W_back_args = conf.get("W_back_args")
         self.W_in = self._init_W_in()
         self.W_res = self._init_W_res()
+        self.W_back = self._init_W_back()
+
+    def _init_W_back(self):
+        if self.W_back_args is None:
+            return None
+        low, high = self.W_back_args["range"]
+        return torch.FloatTensor(self.size).uniform_(low, high)
 
     def _init_W_in(self):
         match self.W_in_args["distribution"]:
@@ -232,7 +240,9 @@ class Matrix:
         obj.size = W_args["size"]
         obj.W_in_args = W_args["W_in_args"]
         obj.W_res_args = W_args["W_res_args"]
+        obj.W_back_args = W_args.get("W_back_args")
         obj.W_in = obj._init_W_in()
+        obj.W_back = obj._init_W_back()
 
         m = int(sqrt(obj.size))
         n = int(sqrt(obj.size))

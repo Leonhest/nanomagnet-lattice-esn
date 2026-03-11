@@ -1,0 +1,69 @@
+num_runs: 1
+res_metrics: False
+state_plot: False
+plot_deciles: False
+data:
+  # name: NARMA
+  # load: true
+  # system_order: 20
+  # sample_len: 6250
+  # split_ratio: 0.4
+  # val_ratio: 0.5
+# data:
+  name: Mackey-Glass
+  load: false
+  closed_loop: true
+  train_len: 3000
+  test_len: 54200
+  tau: 17
+  prediction_horizon: 84
+esn:
+  #training_noise: 0.00001
+  #input_bias: 0.2
+  spectral_radius: 0.95
+  f:
+    name: tanh
+    args:
+      beta: 1
+      shift: 0
+  washout: 1000
+  readout:
+    name: Ridge
+    args:
+      alpha: 0.0
+  W_args:
+    size: [100, 225, 400, 625]
+    W_in_args:
+      input_scale: 1
+      distribution: fixed
+    W_back_args:
+      #range: [0.1, 0.1]
+    W_res_args:
+      self_connection: 0.0
+      directed_edges_fraction: 0.9
+      directed_edges_weights: 0.0
+      sign_frac: 0.5
+      type: [constant, baseline-esn, experiments/conference/tile_scaling/] # constant, random, tile
+      neighborhood: Moore
+      tile:
+        shape: [3, 3]
+        method: random
+optimization:
+  method: cmaes
+  num_evals: 3
+  seed: 42
+  cmaes:
+    optimize_signs: true
+    optimize_directions: true
+    optimize_self_connections: false
+    sigma0: 0.3
+    max_generations: 10
+    pop_size: 20
+  hyperneat:
+    cppn_config_file: ../../cppn_config.txt
+    generations: 10
+    threshold: 0.2
+    substrate: grid
+    substrate_shape: [3, 3]
+  output:
+    save_best_tile: true

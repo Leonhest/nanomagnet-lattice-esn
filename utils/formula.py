@@ -13,34 +13,36 @@ def spectral_radius(w):
     spectral_radius = float(np.max(np.abs(eigvals)))
     return spectral_radius
 
-def calculate_total_recurrent_influence(W_res):
+def calculate_resolvent_metrics(W_res):
     """
-    Calculates the relative self-influence of each node using the resolvent.
+    Computes resolvent-based metrics for each node.
 
-    TRI(j) = |R_jj| / Σ_k |R_jk|
+    R = (I - W)^{-1}
 
-    where R = (I - W)^{-1}.  This gives the fraction of total influence
-    on node j that comes from itself.
+    TRI(j)       = R_jj              (diagonal of the resolvent)
+    TRI_ratio(j) = |R_jj| / Σ_k |R_jk|  (relative self-influence)
 
     Args:
         W_res (np.ndarray): The reservoir adjacency matrix.
 
     Returns:
-        np.ndarray: A vector where the i-th element is the relative
-                    self-influence (TRI) of node i, in [0, 1].
+        tri: np.ndarray — diagonal of the resolvent per node.
+        tri_ratio: np.ndarray — relative self-influence per node, in [0, 1].
     """
     n_reservoir = W_res.shape[0]
     I = np.identity(n_reservoir)
 
     try:
         R = np.linalg.inv(I - W_res)
-        diag_abs = np.abs(np.diag(R))
+        tri = np.diag(R)
+        diag_abs = np.abs(tri)
         row_sums = np.sum(np.abs(R), axis=1)
-        return diag_abs / row_sums
+        tri_ratio = diag_abs / row_sums
+        return tri, tri_ratio
 
     except np.linalg.LinAlgError:
-        print("Error: The matrix (zI - W_res) is singular and cannot be inverted.")
-        return np.full(n_reservoir, np.nan)
+        print("Error: The matrix (I - W_res) is singular and cannot be inverted.")
+        return np.full(n_reservoir, np.nan), np.full(n_reservoir, np.nan)
 
 def calculate_avg_degree(W_res):
     """

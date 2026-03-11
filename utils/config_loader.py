@@ -71,6 +71,7 @@ class ConfigLoader():
     # Keys whose list values are structural (not grid search dimensions)
     _grid_search_exclude = {
         "esn.W_args.W_res_args.tile.shape",
+        "esn.W_args.W_back_args.range",
         "optimization.cmaes.bounds",
         "optimization.hyperneat.substrate_shape",
         "optimization.hyperneat.substrate_coords",
@@ -171,7 +172,10 @@ class ConfigLoader():
                 raise ValueError("Readout not found")
 
     def _init_W(self):
-        self.conf["esn"]["W"] = Matrix(self.conf["esn"]["W_args"])
+        w_args = self.conf["esn"]["W_args"]
+        if "W_back_args" not in w_args:
+            w_args["W_back_args"] = None
+        self.conf["esn"]["W"] = Matrix(w_args)
 
     def _init_esn(self):
         self.conf["esn"]["model"] = ESN(
@@ -180,4 +184,6 @@ class ConfigLoader():
             f=self.conf["esn"]["f"]["module"],
             washout=self.conf["esn"]["washout"],
             readout=self.conf["esn"]["readout"],
+            training_noise=self.conf["esn"].get("training_noise", 0),
+            input_bias=self.conf["esn"].get("input_bias"),
         )

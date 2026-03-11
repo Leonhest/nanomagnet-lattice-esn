@@ -11,11 +11,11 @@ from optimizer.fitness import evaluate_tile
 logger = logging.getLogger(__name__)
 
 
-def _build_substrate_coords(hn_conf):
+def _build_substrate_coords(hn_conf, tile_shape=(3, 3)):
     """Build substrate node coordinates based on config."""
     substrate = hn_conf.get("substrate", "grid")
     if substrate == "grid":
-        rows, cols = hn_conf.get("substrate_shape", [3, 3])
+        rows, cols = hn_conf.get("substrate_shape", list(tile_shape))
         coords = []
         for r in range(rows):
             for c in range(cols):
@@ -66,7 +66,8 @@ def run_hyperneat(config, dataset, output_dir):
     threshold = hn_conf.get("threshold", 0.2)
     generations = hn_conf.get("generations", 300)
 
-    substrate_coords = _build_substrate_coords(hn_conf)
+    tile_shape = tuple(W_args.get("W_res_args", {}).get("tile", {}).get("shape", [3, 3]))
+    substrate_coords = _build_substrate_coords(hn_conf, tile_shape)
     logger.info(f"HyperNEAT: substrate has {len(substrate_coords)} nodes")
 
     # Load neat-python config
@@ -106,7 +107,7 @@ def run_hyperneat(config, dataset, output_dir):
     population.run(eval_genomes, generations)
 
     if best_tile is not None and opt_conf.get("output", {}).get("save_best_tile", True):
-        tile_shape = hn_conf.get("substrate_shape", [3, 3])
+        tile_shape = hn_conf.get("substrate_shape", list(tile_shape))
         save_path = os.path.join(output_dir, "best_tile.json")
         save_tile(best_tile, save_path, metadata={
             "method": "hyperneat",

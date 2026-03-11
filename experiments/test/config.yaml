@@ -39,7 +39,7 @@ esn:
       directed_edges_fraction: 0.9
       directed_edges_weights: 0.0
       sign_frac: 0.5
-      type: [random, tile] # constant, random, tile, baseline-esn
+      type: constant # constant, random, tile, baseline-esn
       neighborhood: Moore
       tile:
         shape: [3, 3]

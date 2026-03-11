@@ -1,8 +1,8 @@
 import torch
 import numpy as np
 
-def nrmse(y_predicted, y):
-    var = torch.std(y)**2
+def nrmse(y_predicted, y, signal_variance=None):
+    var = signal_variance if signal_variance is not None else torch.var(y)
     error = (y - y_predicted)**2
     return float(torch.sqrt(torch.mean(error) / var))
 

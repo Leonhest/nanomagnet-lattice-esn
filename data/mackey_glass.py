@@ -28,40 +28,41 @@ class MackeyGlass():
 
     def _generate_data(self):
         tau = self.conf.get("tau", 17)
-        sample_len = self.conf["sample_len"]
-        h = self.conf.get("prediction_horizon", 1)
+        if "train_len" in self.conf and "test_len" in self.conf:
+            sample_len = self.conf["train_len"] + self.conf["test_len"]
+        else:
+            sample_len = self.conf["sample_len"]
+        h = 1 if self.conf.get("closed_loop", False) else self.conf.get("prediction_horizon", 1)
         warmup = 1000
 
-        # Standard Mackey-Glass parameters
-        beta = 0.2
+        # Standard Mackey-Glass parameters (Jaeger 2001, Holzmann & Hauser 2010)
+        alpha = 0.2
         gamma = 0.1
         n = 10
-        dt = 1.0
+        delta = 0.1  # Euler stepsize
+        tau_steps = int(tau / delta)  # delay in fine steps
 
-        # Total length needed: warmup + sample_len + prediction_horizon
-        total_len = warmup + sample_len + h
+        # Total coarse steps needed: warmup + sample_len + h
+        total_coarse = warmup + sample_len + h
+        total_fine = total_coarse * int(1 / delta)  # 10x finer
 
-        # Initialize history for t in [-tau, 0] with x = 0.9
-        x = np.zeros(total_len + tau)
-        x[:tau] = 0.9
+        # Initialize history with x = 1.2 (Jaeger's initial condition)
+        x = np.zeros(total_fine + tau_steps)
+        x[:tau_steps + 1] = 1.2
 
-        # Integrate with RK4
-        for t in range(tau, total_len + tau - 1):
-            def dxdt(x_t, x_delayed):
-                return beta * x_delayed / (1.0 + x_delayed**n) - gamma * x_t
-
+        # Euler integration at fine timescale (delta = 0.1)
+        for t in range(tau_steps, total_fine + tau_steps - 1):
             x_t = x[t]
-            x_d = x[t - tau]
+            x_d = x[t - tau_steps]
+            x[t + 1] = x_t + delta * (alpha * x_d / (1.0 + x_d**n) - gamma * x_t)
 
-            k1 = dt * dxdt(x_t, x_d)
-            k2 = dt * dxdt(x_t + k1/2, x_d)
-            k3 = dt * dxdt(x_t + k2/2, x_d)
-            k4 = dt * dxdt(x_t + k3, x_d)
+        # Subsample by 10 to get unit time steps, discard history and warmup
+        subsample = int(1 / delta)
+        series = x[tau_steps::subsample]
+        series = series[warmup:warmup + sample_len + h]
 
-            x[t + 1] = x_t + (k1 + 2*k2 + 2*k3 + k4) / 6
-
-        # Discard initial history and warmup transient
-        series = x[tau + warmup:]
+        # Squash into [-1, 1] range (Jaeger: y -> tanh(y - 1))
+        series = np.tanh(series - 1)
 
         # u[t] = x[t], y[t] = x[t + h]
         u = torch.from_numpy(series[:sample_len]).float()
@@ -80,12 +81,20 @@ class MackeyGlass():
             self.y_val = torch.FloatTensor(splits["y_val"])
 
     def _split_data(self, u, y):
-        ratio = self.conf["split_ratio"]
-        split_idx = int(len(u) * ratio)
+        # Support explicit train_len/test_len or fall back to split_ratio
+        train_len = self.conf.get("train_len")
+        test_len = self.conf.get("test_len")
+
+        if train_len is not None and test_len is not None:
+            split_idx = train_len
+        else:
+            ratio = self.conf["split_ratio"]
+            split_idx = int(len(u) * ratio)
+
         u_trainval = u[:split_idx]
         y_trainval = y[:split_idx]
-        u_test = u[split_idx:]
-        y_test = y[split_idx:]
+        u_test = u[split_idx:split_idx + test_len] if test_len is not None else u[split_idx:]
+        y_test = y[split_idx:split_idx + test_len] if test_len is not None else y[split_idx:]
 
         val_ratio = self.conf.get("val_ratio")
         if val_ratio:
