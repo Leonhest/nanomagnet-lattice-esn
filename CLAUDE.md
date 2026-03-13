@@ -52,6 +52,12 @@ There are no tests or linters configured in this project.
 - `data.load: true` expects `.npy` files under `data/datasets/NARMA10/`; set `load: false` to generate them
 - Runs with NRMSE >= 0.8 are filtered out from aggregation/plots
 
+## Config Documentation
+
+When adding new config fields or changing existing ones, always update both:
+- `experiments/config.yaml` — the example template with all available fields
+- `experiments/CONFIG_README.md` — the full reference documenting every config field
+
 ## Outputs
 
 All outputs are written to the experiment folder. NRMSE mode produces `reservoir_stats_summary.json` and parameter sweep plots. Metrics mode produces kernel quality, generalization, and memory capacity plots.
