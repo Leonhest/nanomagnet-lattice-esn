@@ -14,6 +14,45 @@ def euclidean(x, y):
 
 
 
+def alternating_projections(W, iterations):
+    """Push W toward orthogonal while preserving its zero pattern."""
+    mask = (W != 0)
+    for _ in range(iterations):
+        U, _, Vh = np.linalg.svd(W, full_matrices=True)
+        W = (U @ Vh).astype(np.float32)  # orthogonal projection
+        W = W * mask                      # sparsity projection
+    return W
+
+
+def orthogonalize_tile(tile_G, method="exact", iterations=50):
+    """Orthogonalize a tile graph's adjacency matrix and return a new tile graph."""
+    nodes = sorted(tile_G.nodes())
+    n = len(nodes)
+    node_to_idx = {nd: i for i, nd in enumerate(nodes)}
+
+    # Build adjacency matrix
+    A = np.zeros((n, n), dtype=np.float32)
+    for u, v, d in tile_G.edges(data=True):
+        A[node_to_idx[u], node_to_idx[v]] = d['weight']
+
+    # Orthogonalize
+    if method == "exact":
+        U, _, Vh = np.linalg.svd(A, full_matrices=True)
+        A = (U @ Vh).astype(np.float32)
+    elif method == "alternating":
+        A = alternating_projections(A, iterations)
+
+    # Build new tile graph
+    new_tile = nx.DiGraph()
+    for nd in nodes:
+        new_tile.add_node(nd)
+    for i, u in enumerate(nodes):
+        for j, v in enumerate(nodes):
+            if abs(A[i, j]) > 1e-15:
+                new_tile.add_edge(u, v, weight=float(A[i, j]))
+    return new_tile
+
+
 def save_tile(tile_G, path, metadata=None):
     """Save a tile graph as JSON (edge list + metadata)."""
     nodes = list(tile_G.nodes())
@@ -165,6 +204,8 @@ class Matrix:
             Q *= np.sign(np.diag(R))  # Haar-uniform correction
             return torch.FloatTensor(Q.astype(np.float32))
 
+        alt_proj_iters = self.W_res_args.get("alternating_proj", 0)
+
         if self.W_res_args["type"] != "baseline-esn":
             m = int(sqrt(self.size))
             n = int(sqrt(self.size))
@@ -173,10 +214,16 @@ class Matrix:
             skip_self = False
             if _is_tile_path(wd) and _is_full_matrix_json(wd):
                 W_res_np, _ = load_full_matrix(wd)
+                if alt_proj_iters > 0:
+                    W_res_np = alternating_projections(W_res_np.astype(np.float32), alt_proj_iters)
                 return torch.FloatTensor(W_res_np)
             elif _is_tile_path(wd):
                 tile_G, tile_meta = load_tile_with_metadata(wd)
                 tile_rows, tile_cols = tile_meta["tile_shape"]
+                orth_tile = self.W_res_args.get("orthogonal_tile", False)
+                if orth_tile:
+                    orth_iters = self.W_res_args.get("orthogonal_tile_iters", 50)
+                    tile_G = orthogonalize_tile(tile_G, method=orth_tile, iterations=orth_iters)
                 self.G_res = self._tile_from_graph(tile_G, m, n, tile_rows, tile_cols)
                 skip_self = tile_meta.get("optimize_self_connections", False)
             elif wd == "tile":
@@ -188,13 +235,17 @@ class Matrix:
             if not skip_self:
                 self._self_connection(self.G_res)
             W_res = nx.to_numpy_array(self.G_res)
-            return torch.FloatTensor(W_res)
         else:
             #W_res = (torch.randint(0, 2, (self.size, self.size), dtype=torch.float32) * 2) - 1
             W_res = torch.rand(self.size, self.size) * 2 - 1
             W_res[torch.rand(self.size, self.size) > 0.1] = 0.0
             W_res[torch.eye(self.size) == 1] = self.W_res_args["self_connection"]
-            return W_res
+            W_res = W_res.numpy()
+
+        if alt_proj_iters > 0:
+            W_res = alternating_projections(W_res.astype(np.float32), alt_proj_iters)
+
+        return torch.FloatTensor(W_res)
 
     def tiled_rectangular(self, m, n):
         tile_conf = self.W_res_args["tile"]
@@ -210,6 +261,17 @@ class Matrix:
         # Apply sign_frac and directed edges to the tile so both patterns repeat
         self._make_weights_negative(tile_G, self.W_res_args["sign_frac"])
         tile_G = self._make_graph_directed(tile_G, self.W_res_args["directed_edges_fraction"], self.W_res_args["directed_edges_weights"])
+
+        # Tile orthogonalization (before tiling)
+        orth_tile = self.W_res_args.get("orthogonal_tile", False)
+        if orth_tile:
+            orth_iters = self.W_res_args.get("orthogonal_tile_iters", 50)
+            tile_G = orthogonalize_tile(tile_G, method=orth_tile, iterations=orth_iters)
+
+        # "exact" orthogonalization makes the tile dense with new edges,
+        # so use edge-based tiling to preserve them
+        if orth_tile == "exact":
+            return _tile_edges_to_lattice(tile_G, tile_rows, tile_cols, m, n)
 
         # Build directed tile weight lookup
         tile_weights = {}
@@ -258,10 +320,22 @@ class Matrix:
         tile_rows = max(nd[0] for nd in nodes) + 1
         tile_cols = max(nd[1] for nd in nodes) + 1
 
+        # Tile orthogonalization (before tiling)
+        orth_tile = obj.W_res_args.get("orthogonal_tile", False)
+        if orth_tile:
+            orth_iters = obj.W_res_args.get("orthogonal_tile_iters", 50)
+            tile_G = orthogonalize_tile(tile_G, method=orth_tile, iterations=orth_iters)
+
         obj.G_res = obj._tile_from_graph(tile_G, m, n, tile_rows, tile_cols)
         if not skip_self_connection:
             obj._self_connection(obj.G_res)
         W_res = nx.to_numpy_array(obj.G_res)
+
+        # Full-matrix alternating projections (after tiling)
+        alt_proj_iters = obj.W_res_args.get("alternating_proj", 0)
+        if alt_proj_iters > 0:
+            W_res = alternating_projections(W_res.astype(np.float32), alt_proj_iters)
+
         obj.W_res = torch.FloatTensor(W_res)
 
         return obj
