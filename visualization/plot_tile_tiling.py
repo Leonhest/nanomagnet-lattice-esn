@@ -6,7 +6,7 @@ Thesis-quality 3-panel figure illustrating tile tiling onto a lattice.
 (c) Full tiled 12×12 lattice
 
 Usage:
-    python -m utils.plot_tile_tiling
+    python -m visualization.plot_tile_tiling
 """
 
 import numpy as np

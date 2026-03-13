@@ -1,18 +1,31 @@
 # nanomagnet-lattice-esn
 
-Research code for running Echo State Network (ESN) experiments with lattice/directed/signed reservoirs, driven by YAML configs with optional grid search.
+Research code for running Echo State Network (ESN) experiments with lattice-based reservoirs, driven by YAML configs with optional grid search.
 
-## What’s in this repo
+## What's in this repo
 
-- **ESN core**: `ESN.py` — single-input ESN, spectral-radius scaling, Ridge readout, optional state plotting.
-- **Reservoir construction**: `matrix.py` — builds `W_in` and `W_res` (either random sparse or a lattice graph via NetworkX).
-- **Datasets**: `data/NARMA10.py` — load or generate NARMA time series.
-- **Metrics**: `metric.py` — NRMSE plus reservoir metrics: kernel quality, generalization, memory capacity.
+- **ESN core**: `ESN.py` — single-input ESN with spectral-radius scaling, Ridge readout, closed-loop evaluation, memory capacity computation.
+- **Reservoir construction**: `matrix.py` — builds `W_in`, `W_res`, and optional `W_back`. Supports lattice graphs (Von Neumann/Moore), tiled weight patterns, directed/signed edges, orthogonal matrices (Haar-random, alternating projections), and loading pre-trained tiles from JSON.
+- **Activation functions**: `activation.py` — `Tanh` (beta, shift, binary) and `Hysteresis` (Preisach-style per-node hysteresis with coercivity and remanence).
+- **Datasets**: `data/NARMA10.py` (NARMA order 10/20/30), `data/mackey_glass.py` (Mackey-Glass with configurable tau, prediction horizon, closed-loop mode).
+- **Metrics**: `metric.py` — NRMSE, kernel quality, generalization rank, memory capacity.
 - **Runner**:
   - `runner/grid_search.py` — grid search, aggregation, plotting
-  - `runner/single_run.py` — run a single config (NRMSE mode or res-metrics mode)
-  - `runner/reservoir_stats.py` — reservoir state statistics
-  - `utils/gs_plot.py` — plotting utilities (PNG for 1D, HTML for ≥2D)
+  - `runner/single_run.py` — run a single config (NRMSE mode or reservoir metrics mode)
+  - `runner/evaluation.py` — train, test, and closed-loop test functions
+  - `runner/reservoir_stats.py` — reservoir state statistics (node means/variances, TRI)
+- **Optimization**:
+  - `optimize.py` — entry point for tile optimization
+  - `optimizer/cmaes.py` — CMA-ES tile weight optimization
+  - `optimizer/hyperneat.py` — HyperNEAT/CPPN tile evolution
+  - `optimizer/fitness.py` — tile evaluation fitness function
+- **Utilities**:
+  - `utils/gs_plot.py` — grid search plotting (PNG for 1D/2D, HTML for 3D)
+- **Visualization** (standalone scripts):
+  - `visualization/analysis.py` — multi-panel reservoir analysis (eigenvalues, weight histograms, degree stats)
+  - `visualization/eigvec_viz.py` — interactive eigenvector visualization
+  - `visualization/plot_matrix.py` — `plot_tile()` and `plot_lattice()` for direct graph visualization
+  - `visualization/plot_lattice_neighborhoods.py`, `visualization/plot_lattice_hysteresis.py`, `visualization/plot_tile_tiling.py` — figure scripts
 
 ## Setup
 
@@ -39,18 +52,27 @@ python run.py
 python run.py ./experiments/my_exp/
 ```
 
+To run tile optimization:
+
+```bash
+python optimize.py ./experiments/my_opt_exp/
+```
+
 ## Config format (`config.yaml`)
+
+A complete example template with all available fields is at `experiments/config.yaml`. Full documentation of every field is in `experiments/CONFIG_README.md`.
 
 - **Grid search**: any YAML value that is a list becomes a grid-search dimension. All combinations are run.
 - **Repetitions**: `num_runs` repeats each config combination (fresh random initialization each time).
+- **Directory expansion**: if `W_res_args.type` is a directory path, it is auto-expanded into a list of all `.json` files in that directory.
 
 Example:
 
 ```yaml
 num_runs: 5
-res_metrics: false        # false => train/test NRMSE on dataset; true => compute KQ/Gen/MC
-state_plot: false         
-plot_deciles: false       # if true, compute per-decile stats (<=2 grid params for plotting)
+res_metrics: false        # false => train/test NRMSE; true => compute KQ/Gen/MC
+state_plot: false
+plot_deciles: false
 
 data:
   name: NARMA
@@ -75,18 +97,20 @@ esn:
     size: 400
     W_in_args:
       input_scale: 0.1
-      distribution: fixed   # fixed|uniform
+      distribution: fixed   # fixed | uniform
     W_res_args:
-      lattice: true
+      type: constant         # constant | random | tile | baseline-esn | orthogonal | path.json
+      neighborhood: Moore    # Von_Neumann | Moore
       self_connection: [0.0, 0.1, 0.2]  # list => grid search
-      directed: 0.9
+      directed_edges_fraction: 0.9
+      directed_edges_weights: 0.0
       sign_frac: 0.5
 ```
 
 Notes:
 
-- **`W_args.size` must be a perfect square when `lattice: true`** (the lattice is constructed as `sqrt(size) x sqrt(size)`).
-- **`data.load: true`** expects `.npy` files under `data/datasets/NARMA10/`. Set `load: false` to generate and save them.
+- **`W_args.size` must be a perfect square** when using lattice-based types (the lattice is `sqrt(size) x sqrt(size)`).
+- **`data.load: true`** expects `.npy` files under `data/datasets/`. Set `load: false` to generate and save them.
 
 ## Outputs
 
@@ -116,3 +140,6 @@ All outputs are written into the experiment folder you run (the `exp_path` you p
 
 - Computes per-decile statistics over reservoir states and writes HTML plots via `utils/gs_plot.py:plot_decile_statistics`.
 
+### Optimization
+
+- `best_tile_*.json` files containing the optimized tile graph with metadata (method, best NRMSE, parameter values).

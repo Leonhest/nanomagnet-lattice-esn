@@ -5,7 +5,7 @@
 (b) Weights randomly ±1 (50/50)
 
 Usage:
-    python -m utils.plot_lattice_neighborhoods
+    python -m visualization.plot_lattice_neighborhoods
 """
 
 import numpy as np

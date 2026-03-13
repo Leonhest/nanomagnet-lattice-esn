@@ -13,10 +13,11 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import yaml
 
-# Allow running as ``python -m utils.analysis`` from project root
+# Allow running as ``python -m visualization.analysis`` from project root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from matrix import Matrix, load_tile_with_metadata, tile_to_lattice, plot_tile, _is_full_matrix_json, load_full_matrix
+from matrix import Matrix, load_tile_with_metadata, tile_to_lattice, _is_full_matrix_json, load_full_matrix
+from visualization.plot_matrix import plot_tile
 from utils.formula import spectral_radius, calculate_resolvent_metrics, calculate_avg_degree
 
 
@@ -463,7 +464,7 @@ def analyze_from_config(config_path, *, save_dir=None, show=True, eigvec=False,
                     show=show,
                 )
             if eigvec or eigvec_only:
-                from utils.eigvec_viz import eigenvector_viz
+                from visualization.eigvec_viz import eigenvector_viz
                 eigvec_path = os.path.join(save_dir, f"eigvec_{safe_label}.html")
                 eigenvector_viz(W_res_np, target_sr=target_sr,
                                 save_path=eigvec_path,
@@ -478,7 +479,7 @@ def analyze_from_config(config_path, *, save_dir=None, show=True, eigvec=False,
                     show=show,
                 )
             if eigvec or eigvec_only:
-                from utils.eigvec_viz import eigenvector_viz_from_tile
+                from visualization.eigvec_viz import eigenvector_viz_from_tile
                 eigvec_path = os.path.join(save_dir, f"eigvec_{safe_label}.html")
                 eigenvector_viz_from_tile(wtype, lattice_size=W_args["size"],
                                          target_sr=target_sr,
@@ -503,7 +504,7 @@ def analyze_from_config(config_path, *, save_dir=None, show=True, eigvec=False,
                 )
 
             if eigvec or eigvec_only:
-                from utils.eigvec_viz import eigenvector_viz
+                from visualization.eigvec_viz import eigenvector_viz
                 eigvec_path = os.path.join(save_dir, f"eigvec_{safe_label}.html")
                 eigenvector_viz(W_res_np, target_sr=target_sr,
                                 save_path=eigvec_path,
@@ -520,7 +521,7 @@ def analyze_from_config(config_path, *, save_dir=None, show=True, eigvec=False,
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python -m utils.analysis <tile.json or config.yaml> [--size=N] [--sr=X] [--no-show] [--eigvec] [--eigvec-only]")
+        print("Usage: python -m visualization.analysis <tile.json or config.yaml> [--size=N] [--sr=X] [--no-show] [--eigvec] [--eigvec-only]")
         sys.exit(1)
 
     args = sys.argv[1:]
@@ -545,7 +546,7 @@ if __name__ == "__main__":
                 print(f"Avg TRI: {stats['avg_tri']:.4f}")
 
         if do_eigvec or eigvec_only:
-            from utils.eigvec_viz import eigenvector_viz
+            from visualization.eigvec_viz import eigenvector_viz
             stem = os.path.splitext(input_path)[0]
             eigenvector_viz(W_res_np, target_sr=target_sr,
                             save_path=f"{stem}_eigvec.html",
@@ -560,7 +561,7 @@ if __name__ == "__main__":
                 print(f"Avg TRI: {stats['avg_tri']:.4f}")
 
         if do_eigvec or eigvec_only:
-            from utils.eigvec_viz import eigenvector_viz_from_tile
+            from visualization.eigvec_viz import eigenvector_viz_from_tile
             eigenvector_viz_from_tile(input_path, lattice_size=lattice_size,
                                      target_sr=target_sr)
 

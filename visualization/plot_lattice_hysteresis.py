@@ -9,7 +9,7 @@ The ESN state update: x[t] = tanh(β * (W_in * u[t] + W_res @ x[t-1]) - shift)
 Self-connections (diagonal of W_res) feed x[t-1] back, creating hysteresis.
 
 Usage:
-    python -m utils.plot_lattice_hysteresis
+    python -m visualization.plot_lattice_hysteresis
 """
 
 import numpy as np

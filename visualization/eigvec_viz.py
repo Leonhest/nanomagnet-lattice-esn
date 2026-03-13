@@ -9,7 +9,7 @@ from scipy.linalg import schur
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# Allow running as ``python -m utils.eigvec_viz`` from project root
+# Allow running as ``python -m visualization.eigvec_viz`` from project root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
@@ -1010,7 +1010,7 @@ def eigenvector_viz_from_tile(tile_path, *, lattice_size=400, target_sr=None,
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python -m utils.eigvec_viz <tile.json> [--size=N] [--sr=X]")
+        print("Usage: python -m visualization.eigvec_viz <tile.json> [--size=N] [--sr=X]")
         sys.exit(1)
 
     args = sys.argv[1:]
