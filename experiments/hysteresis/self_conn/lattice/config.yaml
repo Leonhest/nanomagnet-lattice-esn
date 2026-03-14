@@ -26,21 +26,21 @@ data:
 
 # --- ESN ----------------------------------------------------------------------
 esn:
-  spectral_radius: 0.95         # Target spectral radius (null = no rescaling)
+  spectral_radius: [0.8, 0.9, 0.95, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]         # Target spectral radius (null = no rescaling)
   washout: 200                  # Number of initial timesteps discarded
   training_noise: 0             # Uniform noise amplitude added during training (0 = off)
   input_bias: null              # Fixed input signal replacing u[t] (null = use actual input)
 
   # Activation function
   f:
-    name: hysteresis                 # "tanh" or "hysteresis" (both use the Hysteresis class)
+    name: hysteresis                 # "tanh" or "hysteresis"
     args:
       beta: 1.0                 # Steepness of tanh
-      shift: 0.15                # Horizontal shift: tanh(beta * x - shift)
-      binary: false             # true = apply sign() after tanh
-      h_c: 0.0                  # Coercivity — half-width of hysteresis loop (0 = standard tanh)
-      m_r: 1.0                  # Remanence scaling factor (1.0 = standard tanh)
-      decay_rate: 2.0           # Minor loop merge speed (0 = hard branch switch, higher = faster merge)
+      shift: 0.15              # Horizontal shift: tanh(beta * x - shift)
+      binary: false             # tanh only — true = apply sign() after tanh
+      h_c: 0.0               # Coercivity — half-width of hysteresis loop
+      m_r: 1.0
+      decay_rate: 2          # Minor loop merge speed (0 = hard branch switch, higher = faster merge)
 
   # Readout layer
   readout:
@@ -63,7 +63,7 @@ esn:
                                 #   or path to a .json tile/matrix file,
                                 #   or path to a directory of .json files (auto-expanded to list)
       neighborhood: Moore       # "Von_Neumann" (4-connected) or "Moore" (8-connected)
-      self_connection: 0.0      # Self-loop weight on every node
+      self_connection: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]      # Self-loop weight on every node
       sign_frac: 0.5            # Fraction of edges made negative
       directed_edges_fraction: 0.9  # Fraction of edge pairs made unidirectional
       directed_edges_weights: 0.0   # Weight multiplier for the removed direction (0 = fully remove)

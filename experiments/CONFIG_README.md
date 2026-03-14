@@ -69,25 +69,20 @@ esn:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `name` | string | *required* | Activation function: `"tanh"` or `"hysteresis"`. |
+| `name` | string | *required* | Activation function: `"tanh"` or `"hysteresis"`. Both names use the same `Hysteresis` class — `"tanh"` is an alias for convenience. |
 
 #### `esn.f.args` — Activation Arguments
 
-**For `tanh`:**
+All parameters are shared between `"tanh"` and `"hysteresis"` names (they use the same class). With `h_c=0` and `m_r=1` the activation reduces to standard `tanh(beta * x - shift)`.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `beta` | float | `1.0` | Steepness (gain) of the tanh. Output = `tanh(beta * x - shift)`. Higher values make the activation more step-like. |
-| `shift` | float | `0.0` | Horizontal shift applied before tanh. Output = `tanh(beta * x - shift)`. Moves the inflection point away from zero. |
+| `beta` | float | `1.0` | Steepness (gain) of the tanh. Higher values make the activation more step-like. |
+| `shift` | float | `0.0` | Horizontal shift applied before tanh: `tanh(beta * x - shift)`. Moves the inflection point away from zero. |
 | `binary` | bool | `false` | If `true`, applies `sign()` after tanh, producing binary {-1, +1} outputs. |
-
-**For `hysteresis`:**
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `beta` | float | `1.0` | Steepness of the tanh branches in the hysteresis loop. |
-| `h_c` | float | `0.5` | Coercivity — half-width of the hysteresis loop. Controls how far the input must swing before the output switches branches. When `h_c=0`, hysteresis reduces to standard tanh. |
-| `m_r` | float | `1.0` | Remanence scaling factor. Scales the output amplitude of both branches. |
+| `h_c` | float | `0.0` | Coercivity — half-width of the hysteresis loop. Controls how far the input must swing before the output switches branches. `0` = no hysteresis (standard tanh). |
+| `m_r` | float | `1.0` | Remanence scaling factor. Scales the output amplitude of both branches. `1.0` = standard amplitude. |
+| `decay_rate` | float | `2.0` | Minor loop merge speed. On direction reversal, the output smoothly transitions toward the target major branch; `decay_rate` controls how fast. `0` = hard branch switch (legacy behavior). Higher values = faster merge. Practical range: 0.5–5.0. |
 
 ### `esn.readout` — Readout Layer
 

@@ -86,7 +86,11 @@ class ESN(nn.Module):
                 x = self.f(state_input)
 
             # Save hysteresis state so free-run doesn't corrupt the true branch
-            saved_f_state = self.f.prev_output.clone() if hasattr(self.f, 'prev_output') and self.f.prev_output is not None else None
+            saved_f_state = {}
+            for attr in ('prev_output', 'prev_x', 'was_ascending', 'reversal_x', 'branch_offset'):
+                val = getattr(self.f, attr, None)
+                if val is not None:
+                    saved_f_state[attr] = val.clone() if hasattr(val, 'clone') else val
 
             # Free-run for prediction_horizon steps, record only the last prediction
             x_free = x.clone()
@@ -104,8 +108,8 @@ class ESN(nn.Module):
             ground_truths[trial] = u_test[start + window_len - 1]
 
             # Restore hysteresis state to continue from the teacher-forced branch
-            if saved_f_state is not None:
-                self.f.prev_output = saved_f_state
+            for attr, val in saved_f_state.items():
+                setattr(self.f, attr, val)
 
             # Advance true state through the free-run portion for next trial
             for t in range(prediction_horizon):

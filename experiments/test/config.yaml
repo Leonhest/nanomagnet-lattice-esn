@@ -36,9 +36,9 @@ esn:
       distribution: fixed
     W_res_args:
       self_connection: 0.0
-      directed_edges_fraction: 0.9
+      directed_edges_fraction: [0.0]
       directed_edges_weights: 0.0
-      sign_frac: 0.5
+      sign_frac: [0.0]
       type: constant # constant, random, tile, baseline-esn
       neighborhood: Moore
       tile:

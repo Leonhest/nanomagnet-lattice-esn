@@ -39,16 +39,36 @@ def _find_conjugate_pairs(eigvals):
     return pairs
 
 
-def _compute_quiver(phase_grid, m):
-    """Compute quiver arrow markers from a phase grid.
+N_QUIVER_BINS = 12
 
-    Returns dict with xs, ys, angles (degrees for Plotly marker rotation),
-    sizes (scaled by gradient magnitude), and dir_angles (radians for color).
-    Uses wrap-safe phase differences (hard boundary: no arrows at grid edges).
-    Flow direction: high phase -> low phase (negated gradient).
+
+def _arrow_segments(c, r, u, v, arrow_scale=0.4, head_scale=0.35):
+    """Return (xs, ys) for a single centered arrow with chevron head."""
+    import math
+    head_angle = math.pi / 5
+    dx, dy = u * arrow_scale, v * arrow_scale
+    x0, y0 = c - dx / 2, r - dy / 2
+    tx, ty = c + dx / 2, r + dy / 2
+    xs = [x0, tx, None]
+    ys = [y0, ty, None]
+    angle = math.atan2(dy, dx)
+    bl = math.sqrt(dx ** 2 + dy ** 2)
+    hl = max(bl * head_scale, 0.04)
+    wa1 = angle + math.pi + head_angle
+    wa2 = angle + math.pi - head_angle
+    xs.extend([tx + hl * math.cos(wa1), tx, tx + hl * math.cos(wa2), None])
+    ys.extend([ty + hl * math.sin(wa1), ty, ty + hl * math.sin(wa2), None])
+    return xs, ys
+
+
+def _compute_quiver_binned(phase_grid, m):
+    """Compute quiver arrows binned by direction for per-bin coloring.
+
+    Returns list of N_QUIVER_BINS dicts, each with 'xs' and 'ys' segments.
+    Uses wrap-safe phase differences (hard boundary at grid edges).
     """
     import math
-    xs, ys, angles, mags, dir_angles = [], [], [], [], []
+    bins = [{"xs": [], "ys": []} for _ in range(N_QUIVER_BINS)]
     for r in range(m):
         for c in range(m):
             u, v = 0.0, 0.0
@@ -61,25 +81,14 @@ def _compute_quiver(phase_grid, m):
             mag = math.sqrt(u * u + v * v)
             if mag < 1e-10:
                 continue
-            # Visual direction: negate v for reversed y-axis display
-            # arrow-up default is 90° math, so subtract 90° for Plotly rotation
-            vis_angle = math.atan2(-v, u)
-            plotly_deg = math.degrees(vis_angle) - 90
-            xs.append(c)
-            ys.append(r)
-            angles.append(plotly_deg)
-            mags.append(mag)
-            dir_angles.append(math.atan2(v, u))
-    # Scale sizes — adapt to grid density to avoid overlap
-    max_sz = max(8, min(18, 200 / m))
-    min_sz = max(5, max_sz * 0.5)
-    if mags:
-        max_mag = max(mags)
-        sizes = [min_sz + (max_sz - min_sz) * (s / max_mag) for s in mags]
-    else:
-        sizes = []
-    return {"xs": xs, "ys": ys, "angles": angles, "sizes": sizes,
-            "dirs": dir_angles}
+            # Direction angle -> bin index
+            angle = math.atan2(v, u)  # [-pi, pi]
+            bi = int((angle + math.pi) / (2 * math.pi) * N_QUIVER_BINS)
+            bi = min(bi, N_QUIVER_BINS - 1)
+            axs, ays = _arrow_segments(c, r, u, v)
+            bins[bi]["xs"].extend(axs)
+            bins[bi]["ys"].extend(ays)
+    return bins
 
 
 def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector Explorer"):
@@ -235,27 +244,28 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     }
 
     # --- Build Plotly figure --------------------------------------------------
-    # Layout: 4 rows x 4 cols
+    # Layout: 5 rows x 4 cols
     #   Row 1: Spectrum [rowspan=2, colspan=2] | Magnitude     | Local R
     #   Row 2:                                 | Phase         |
     #   Row 3: Res(z)@1   | |Res(ze^i)@1|     | angle Res     | Res Local R
-    #   Row 4: diag(Res)   | Rel. Self-Infl |              |
+    #   Row 4: diag(Res)   | Rel. Self-Infl   |               |
+    #   Row 5: Resolvent Phase Flow [colspan=2] | Phase Flow [colspan=2]
     fig = make_subplots(
-        rows=4, cols=4,
+        rows=5, cols=4,
         column_widths=[0.25, 0.25, 0.25, 0.25],
-        row_heights=[0.25, 0.25, 0.25, 0.25],
+        row_heights=[0.16, 0.16, 0.16, 0.16, 0.36],
         specs=[
             [{"rowspan": 2, "colspan": 2}, None, {"type": "heatmap"}, {"type": "heatmap"}],
-            [None, None, {"type": "heatmap"}, {}],
+            [None, None, {"type": "heatmap"}, None],
             [{"type": "heatmap"}, {"type": "heatmap"}, {"type": "heatmap"}, {"type": "heatmap"}],
-            [{"type": "heatmap"}, {"type": "heatmap"}, {}, None],
+            [{"type": "heatmap"}, {"type": "heatmap"}, None, None],
+            [{"colspan": 2}, None, {"colspan": 2}, None],
         ],
         subplot_titles=[
             "Eigenvalue Spectrum",
             f"Magnitude |v| \u2014 \u03bb\u2080 = {eigvals[0].real:.4f}{eigvals[0].imag:+.4f}j",
             "Local Phase Coherence R",
             f"Phase \u2220v \u2014 \u03bb\u2080 = {eigvals[0].real:.4f}{eigvals[0].imag:+.4f}j",
-            "Phase Flow",
             "(I \u2212 W)\u207b\u00b9 \u00b7 1",
             "|(e\u2071\u2070\u00b7\u00b9I \u2212 W)\u207b\u00b9 \u00b7 1|",
             "\u2220(e\u2071\u2070\u00b7\u00b9I \u2212 W)\u207b\u00b9 \u00b7 1",
@@ -263,6 +273,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
             "diag (I \u2212 W)\u207b\u00b9",
             "|R\u2c7c\u2c7c| / \u03a3\u2096|R\u2c7c\u2096|",
             "Resolvent Phase Flow",
+            "Phase Flow",
         ],
         horizontal_spacing=0.06,
         vertical_spacing=0.08,
@@ -304,7 +315,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
                 size=7,
                 color=np.abs(eigvals).tolist(),
                 colorscale="Viridis",
-                colorbar=dict(title="|\u03bb|", x=-0.08, len=0.30, y=0.77, thickness=12),
+                colorbar=dict(title="|\u03bb|", x=-0.08, len=0.22, y=0.851, thickness=12),
                 line=dict(width=line_widths, color=line_colors),
             ),
             text=hover_text, hoverinfo="text",
@@ -317,7 +328,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     fig.add_trace(
         go.Heatmap(
             z=mag_grids[0], colorscale="Viridis",
-            colorbar=dict(title="|v|", x=0.74, len=0.19, y=0.905, thickness=12),
+            colorbar=dict(title="|v|", x=0.74, len=0.10, y=0.946, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>|v|=%{z:.4f}<extra></extra>",
         ),
         row=1, col=3,
@@ -341,7 +352,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         go.Heatmap(
             z=phase_grids[0], colorscale=phase_colorscale,
             zmin=-np.pi, zmax=np.pi,
-            colorbar=dict(title="\u2220v", x=0.74, len=0.19, y=0.635, thickness=12),
+            colorbar=dict(title="\u2220v", x=0.74, len=0.10, y=0.757, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>\u2220v=%{z:.4f}<extra></extra>",
         ),
         row=2, col=3,
@@ -352,7 +363,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         go.Heatmap(
             z=local_kuramoto_grids[0], colorscale="Viridis",
             zmin=0, zmax=1,
-            colorbar=dict(title="R", x=1.01, len=0.19, y=0.905, thickness=12),
+            colorbar=dict(title="R", x=1.01, len=0.10, y=0.946, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>R=%{z:.4f}<extra></extra>",
         ),
         row=1, col=4,
@@ -364,7 +375,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     fig.add_trace(
         go.Heatmap(
             z=res_z1, colorscale="RdBu_r", zmid=0,
-            colorbar=dict(title="val", x=0.21, len=0.19, y=0.365, thickness=12),
+            colorbar=dict(title="val", x=0.21, len=0.10, y=0.568, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>val=%{z:.4f}<extra></extra>",
         ),
         row=3, col=1,
@@ -374,7 +385,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     fig.add_trace(
         go.Heatmap(
             z=res_z_mag, colorscale="Viridis",
-            colorbar=dict(title="|val|", x=0.47, len=0.19, y=0.365, thickness=12),
+            colorbar=dict(title="|val|", x=0.47, len=0.10, y=0.568, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>|val|=%{z:.4f}<extra></extra>",
         ),
         row=3, col=2,
@@ -385,7 +396,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         go.Heatmap(
             z=res_z_phase, colorscale=phase_colorscale,
             zmin=-np.pi, zmax=np.pi,
-            colorbar=dict(title="\u2220", x=0.74, len=0.19, y=0.365, thickness=12),
+            colorbar=dict(title="\u2220", x=0.74, len=0.10, y=0.568, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>\u2220=%{z:.4f}<extra></extra>",
         ),
         row=3, col=3,
@@ -396,7 +407,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         go.Heatmap(
             z=res_z_local_r, colorscale="Viridis",
             zmin=0, zmax=1,
-            colorbar=dict(title="R", x=1.01, len=0.19, y=0.365, thickness=12),
+            colorbar=dict(title="R", x=1.01, len=0.10, y=0.568, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>R=%{z:.4f}<extra></extra>",
         ),
         row=3, col=4,
@@ -406,7 +417,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     fig.add_trace(
         go.Heatmap(
             z=res_diag, colorscale="RdBu_r", zmid=0,
-            colorbar=dict(title="diag", x=0.21, len=0.19, y=0.095, thickness=12),
+            colorbar=dict(title="diag", x=0.21, len=0.10, y=0.379, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>val=%{z:.4f}<extra></extra>",
         ),
         row=4, col=1,
@@ -417,64 +428,62 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         go.Heatmap(
             z=res_rel_self, colorscale="Viridis",
             zmin=0, zmax=1,
-            colorbar=dict(title="rel", x=0.47, len=0.19, y=0.095, thickness=12),
+            colorbar=dict(title="rel", x=0.47, len=0.10, y=0.379, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>rel=%{z:.4f}<extra></extra>",
         ),
         row=4, col=2,
     )
 
-    # --- Phase flow quiver (row=2, col=4) — dynamic, updates on click ---------
-    q0 = _compute_quiver(phase_grids[0], m)
+    # --- Quiver bin colors (HSV color wheel mapped to direction angle) ----------
+    import colorsys
+    quiver_colors = []
+    for i in range(N_QUIVER_BINS):
+        hue = (i + 0.5) / N_QUIVER_BINS
+        r_, g_, b_ = colorsys.hsv_to_rgb(hue, 1.0, 0.9)
+        quiver_colors.append(f"rgb({int(r_*255)},{int(g_*255)},{int(b_*255)})")
 
-    # Trace 12: eigenvector phase flow arrows (direction-colored markers)
-    fig.add_trace(
-        go.Scatter(
-            x=q0["xs"], y=q0["ys"],
-            mode="markers",
-            marker=dict(
-                symbol="arrow", angle=q0["angles"], size=q0["sizes"],
-                color=q0["dirs"], colorscale=phase_colorscale,
-                cmin=-np.pi, cmax=np.pi,
+    # --- Resolvent phase flow quiver (row=5, col=1, colspan=2) — static --------
+    # Traces 12..(12+N_QUIVER_BINS-1): one per direction bin
+    qr_bins = _compute_quiver_binned(res_z_phase, m)
+    for bi in range(N_QUIVER_BINS):
+        fig.add_trace(
+            go.Scatter(
+                x=qr_bins[bi]["xs"], y=qr_bins[bi]["ys"],
+                mode="lines", line=dict(color=quiver_colors[bi], width=1.5),
+                hoverinfo="skip", showlegend=False,
             ),
-            hoverinfo="skip", showlegend=False,
-        ),
-        row=2, col=4,
-    )
+            row=5, col=1,
+        )
 
-    # --- Resolvent phase flow quiver (row=4, col=3) — static ------------------
-    qr = _compute_quiver(res_z_phase, m)
-
-    # Trace 13: resolvent phase flow arrows (direction-colored markers)
-    fig.add_trace(
-        go.Scatter(
-            x=qr["xs"], y=qr["ys"],
-            mode="markers",
-            marker=dict(
-                symbol="arrow", angle=qr["angles"], size=qr["sizes"],
-                color=qr["dirs"], colorscale=phase_colorscale,
-                cmin=-np.pi, cmax=np.pi,
+    # --- Eigenvector phase flow quiver (row=5, col=3, colspan=2) — dynamic ----
+    # Traces (12+N_QUIVER_BINS)..(12+2*N_QUIVER_BINS-1): updates on click
+    q0_bins = _compute_quiver_binned(phase_grids[0], m)
+    for bi in range(N_QUIVER_BINS):
+        fig.add_trace(
+            go.Scatter(
+                x=q0_bins[bi]["xs"], y=q0_bins[bi]["ys"],
+                mode="lines", line=dict(color=quiver_colors[bi], width=1.5),
+                hoverinfo="skip", showlegend=False,
             ),
-            hoverinfo="skip", showlegend=False,
-        ),
-        row=4, col=3,
-    )
+            row=5, col=3,
+        )
 
     # Spectrum axis styling
     fig.update_xaxes(title_text="Re(\u03bb)", row=1, col=1)
     fig.update_yaxes(title_text="Im(\u03bb)", scaleanchor="x", scaleratio=1, constrain="domain", row=1, col=1)
 
     # Heatmap axes — reversed y for matrix layout
-    for r, c in [(1, 3), (1, 4), (2, 3), (2, 4), (3, 1), (3, 2), (3, 3), (3, 4), (4, 1), (4, 2), (4, 3)]:
+    for r, c in [(1, 3), (1, 4), (2, 3), (3, 1), (3, 2), (3, 3), (3, 4), (4, 1), (4, 2)]:
         fig.update_yaxes(autorange="reversed", row=r, col=c)
 
-    # Quiver subplots: fix axis ranges to match heatmap extents (no auto-padding)
-    for r, c in [(2, 4), (4, 3)]:
+    # Quiver subplots: fix axis ranges (no scaleanchor — it would bind to spectrum x-axis)
+    for r, c in [(5, 1), (5, 3)]:
         fig.update_xaxes(range=[-0.5, m - 0.5], row=r, col=c)
         fig.update_yaxes(range=[m - 0.5, -0.5], autorange=False, row=r, col=c)
 
     fig.update_layout(
         title=dict(text=title, x=0.5),
-        height=1150,
+        height=1850,
         margin=dict(l=80, r=30, t=80, b=40),
         showlegend=True,
         legend=dict(x=0.0, y=1.0, yanchor="top", orientation="h"),
@@ -491,14 +500,14 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     #   [1] Magnitude
     #   [2] Local Phase Coherence R
     #   [3] Phase
-    #   [4] Phase Flow
-    #   [5] Res(z=1)@1
-    #   [6] |Res(z=e^i0.5)@1|
-    #   [7] angle Res(z=e^i0.5)@1
-    #   [8] Resolvent Local Phase Coherence
-    #   [9] diag(Res)
-    #   [10] Rel. Self-Infl
-    #   [11] Resolvent Phase Flow
+    #   [4] Res(z=1)@1
+    #   [5] |Res(z=e^i0.5)@1|
+    #   [6] angle Res(z=e^i0.5)@1
+    #   [7] Resolvent Local Phase Coherence
+    #   [8] diag(Res)
+    #   [9] Rel. Self-Infl
+    #   [10] Resolvent Phase Flow
+    #   [11] Phase Flow (dynamic)
     js_handler = """
 <script>
 (function() {
@@ -536,8 +545,26 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         return '\\u03bb' + idx + ' = ' + re + im + 'j  |\\u03bb| = ' + abs_val;
     }
 
+    var NBINS = """ + str(N_QUIVER_BINS) + """;
+    var QBASE = 12 + NBINS;  // eigvec quiver traces start here
+
+    function arrowSegs(c, r, u, v) {
+        var s = 0.4, hs = 0.35, ha = Math.PI / 5;
+        var dx = u * s, dy = v * s;
+        var x0 = c - dx/2, y0 = r - dy/2, tx = c + dx/2, ty = r + dy/2;
+        var xs = [x0, tx, null], ys = [y0, ty, null];
+        var ang = Math.atan2(dy, dx);
+        var bl = Math.sqrt(dx*dx + dy*dy);
+        var hl = Math.max(bl * hs, 0.04);
+        var w1 = ang + Math.PI + ha, w2 = ang + Math.PI - ha;
+        xs.push(tx + hl*Math.cos(w1), tx, tx + hl*Math.cos(w2), null);
+        ys.push(ty + hl*Math.sin(w1), ty, ty + hl*Math.sin(w2), null);
+        return {xs: xs, ys: ys};
+    }
+
     function computeQuiver(phaseGrid) {
-        var xs = [], ys = [], angles = [], mags = [], dirs = [];
+        var bins = [];
+        for (var b = 0; b < NBINS; b++) bins.push({xs: [], ys: []});
         for (var r = 0; r < m; r++) {
             for (var c = 0; c < m; c++) {
                 var u = 0, v = 0;
@@ -549,24 +576,15 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
                     var dp2 = phaseGrid[r + 1][c] - phaseGrid[r][c];
                     v = -Math.atan2(Math.sin(dp2), Math.cos(dp2)) / Math.PI;
                 }
-                var mag = Math.sqrt(u * u + v * v);
-                if (mag < 1e-10) continue;
-                var visAngle = Math.atan2(-v, u);
-                xs.push(c);
-                ys.push(r);
-                angles.push(visAngle * 180 / Math.PI - 90);
-                mags.push(mag);
-                dirs.push(Math.atan2(v, u));
+                if (u*u + v*v < 1e-20) continue;
+                var ang = Math.atan2(v, u);
+                var bi = Math.min(Math.floor((ang + Math.PI) / (2*Math.PI) * NBINS), NBINS - 1);
+                var seg = arrowSegs(c, r, u, v);
+                bins[bi].xs = bins[bi].xs.concat(seg.xs);
+                bins[bi].ys = bins[bi].ys.concat(seg.ys);
             }
         }
-        var sizes = [];
-        if (mags.length > 0) {
-            var maxSz = Math.max(8, Math.min(18, 200 / m));
-            var minSz = Math.max(5, maxSz * 0.5);
-            var maxMag = Math.max.apply(null, mags);
-            for (var i = 0; i < mags.length; i++) sizes.push(minSz + (maxSz - minSz) * (mags[i] / maxMag));
-        }
-        return {xs: xs, ys: ys, angles: angles, sizes: sizes, dirs: dirs};
+        return bins;
     }
 
     function updateRemovalCount() {
@@ -755,9 +773,11 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         Plotly.restyle(plot, {z: [data.phase[idx]], colorscale: [phaseCS], zmin: [-Math.PI], zmax: [Math.PI]}, [4]);
         Plotly.restyle(plot, {z: [data.local_kuramoto[idx]]}, [5]);
 
-        // Update phase flow quiver (trace 12: direction-colored arrows)
+        // Update phase flow quiver (traces 12..12+NBINS-1)
         var q = computeQuiver(data.phase[idx]);
-        Plotly.restyle(plot, {x: [q.xs], y: [q.ys], 'marker.angle': [q.angles], 'marker.size': [q.sizes], 'marker.color': [q.dirs]}, [12]);
+        var qxs = [], qys = [], qidx = [];
+        for (var b = 0; b < NBINS; b++) { qxs.push(q[b].xs); qys.push(q[b].ys); qidx.push(QBASE + b); }
+        Plotly.restyle(plot, {x: qxs, y: qys}, qidx);
 
         // Highlight selected eigenvalue (preserve removal visuals)
         var widths = new Array(n).fill(0);
@@ -790,7 +810,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
             annotations[1].text = 'Magnitude |v| \\u2014 ' + label;
             annotations[2].text = 'Local Phase Coherence \\u2014 ' + shortLabel;
             annotations[3].text = 'Phase \\u2220v \\u2014 ' + shortLabel;
-            annotations[4].text = 'Phase Flow \\u2014 ' + shortLabel;
+            annotations[11].text ='Phase Flow \\u2014 ' + shortLabel;
             Plotly.relayout(plot, {annotations: annotations});
         }
 
@@ -814,7 +834,9 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
             Plotly.restyle(plot, {z: [data.total_local_kuramoto]}, [5]);
 
             // Clear phase flow quiver
-            Plotly.restyle(plot, {x: [[]], y: [[]], 'marker.angle': [[]], 'marker.size': [[]], 'marker.color': [[]]}, [12]);
+            var clrx = [], clry = [], clri = [];
+            for (var b = 0; b < NBINS; b++) { clrx.push([]); clry.push([]); clri.push(QBASE + b); }
+            Plotly.restyle(plot, {x: clrx, y: clry}, clri);
 
             var widths = new Array(n).fill(0);
             var colors = new Array(n).fill('rgba(0,0,0,0)');
@@ -836,7 +858,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
                 annotations[1].text = 'Total Activity \\u2014 \\u03a3 |\\u03bb\\u1d62|\\u00b7|v\\u1d62|\\u00b2';
                 annotations[2].text = 'Local Phase Coherence (weighted total)';
                 annotations[3].text = '(inactive during Total Activity)';
-                annotations[4].text = '(inactive during Total Activity)';
+                annotations[11].text ='(inactive during Total Activity)';
                 Plotly.relayout(plot, {annotations: annotations});
             }
         } else {
@@ -847,7 +869,9 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
 
             // Restore phase flow quiver
             var q = computeQuiver(data.phase[idx]);
-            Plotly.restyle(plot, {x: [q.xs], y: [q.ys], 'marker.angle': [q.angles], 'marker.size': [q.sizes], 'marker.color': [q.dirs]}, [12]);
+            var qxs = [], qys = [], qidx = [];
+            for (var b = 0; b < NBINS; b++) { qxs.push(q[b].xs); qys.push(q[b].ys); qidx.push(QBASE + b); }
+            Plotly.restyle(plot, {x: qxs, y: qys}, qidx);
 
             var widths = new Array(n).fill(0);
             var colors = new Array(n).fill('rgba(0,0,0,0)');
@@ -878,7 +902,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
                 annotations[1].text = 'Magnitude |v| \\u2014 ' + label;
                 annotations[2].text = 'Local Phase Coherence \\u2014 ' + shortLabel;
                 annotations[3].text = 'Phase \\u2220v \\u2014 ' + shortLabel;
-                annotations[4].text = 'Phase Flow \\u2014 ' + shortLabel;
+                annotations[11].text ='Phase Flow \\u2014 ' + shortLabel;
                 Plotly.relayout(plot, {annotations: annotations});
             }
         }
@@ -917,7 +941,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
 <title>{title}</title>
 <style>
   body {{ margin: 20px; font-family: sans-serif; }}
-  #eigvec-plot {{ width: 100%; min-height: 1100px; }}
+  #eigvec-plot {{ width: 100%; min-height: 1850px; }}
   #info {{ color: #666; margin-bottom: 10px; font-size: 14px; }}
   #activity-btn {{
     padding: 8px 18px; margin-left: 16px; cursor: pointer;

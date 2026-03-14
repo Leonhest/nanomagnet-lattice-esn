@@ -49,7 +49,7 @@ Any YAML value that is a list in `config.yaml` becomes a grid-search dimension. 
 
 - **`ESN.py`** — `ESN(nn.Module)`: reservoir state update `x = f(W_in * u[t] + W_res @ x)`, washout, Ridge readout training, closed-loop evaluation, memory capacity computation
 - **`matrix.py`** — `Matrix`: constructs `W_in`, `W_res`, optional `W_back`. Lattice mode builds a `sqrt(size) x sqrt(size)` grid graph via NetworkX. Supports Von Neumann/Moore neighborhoods, directed edges, signed weights, tiled weight patterns, orthogonal matrices (Haar-random, alternating projections), loading tiles/full matrices from JSON
-- **`activation.py`** — `Tanh` (beta, shift, binary mode) and `Hysteresis` (Preisach-style per-node hysteresis with coercivity h_c and remanence m_r)
+- **`activation.py`** — `Hysteresis` (Preisach-style per-node hysteresis with coercivity h_c, remanence m_r, beta, shift, binary mode). With h_c=0 and m_r=1 it reduces to standard tanh.
 - **`readout.py`** — `Ridge`: sklearn Ridge regression wrapper
 - **`metric.py`** — `nrmse`, `kernel_quality`, `generalization`, `memory_capacity`
 - **`utils/config_loader.py`** — `ConfigLoader`: parses `config.yaml`, detects list params for grid search, auto-expands directory paths to `.json` file lists, instantiates all objects

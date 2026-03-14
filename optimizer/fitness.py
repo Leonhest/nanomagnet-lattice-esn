@@ -6,7 +6,7 @@ import torch
 from ESN import ESN
 from matrix import Matrix
 from readout import Ridge
-from activation import Tanh
+from activation import Hysteresis
 from runner.evaluation import train, test
 from utils.formula import spectral_radius
 
@@ -42,7 +42,7 @@ def evaluate_tile(tile_G, W_args, esn_conf, dataset, num_evals=1,
                 return 1.0
 
             readout = Ridge(**esn_conf["readout"]["args"])
-            f = Tanh(**esn_conf["f"]["args"])
+            f = Hysteresis(**esn_conf["f"]["args"])
 
             model = ESN(
                 W=W,
