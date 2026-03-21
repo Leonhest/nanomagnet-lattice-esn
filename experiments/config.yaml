@@ -62,7 +62,8 @@ esn:
       type: constant            # "constant", "random", "tile", "baseline-esn", "orthogonal",
                                 #   or path to a .json tile/matrix file,
                                 #   or path to a directory of .json files (auto-expanded to list)
-      neighborhood: Moore       # "Von_Neumann" (4-connected) or "Moore" (8-connected)
+      neighborhood: 2            # Number of distance shells: 1 = 4 neighbors (Von Neumann), 2 = 8 (Moore),
+                                #   3 = 12, 4 = 20, ... Also accepts "Von_Neumann" (=1) or "Moore" (=2)
       self_connection: 0.0      # Self-loop weight on every node (or "from_tile" to resolve from tile JSON metadata)
       sign_frac: 0.5            # Fraction of edges made negative (or "from_tile")
       directed_edges_fraction: 0.9  # Fraction of edge pairs made unidirectional (or "from_tile")
@@ -90,7 +91,7 @@ optimization:
 
   cmaes:
     sigma0: 0.3                 # Initial step size
-    max_generations: 200        # Maximum CMA-ES generations
+    max_generations: 10         # Maximum CMA-ES generations
     pop_size: 20                # Population size
     bounds: [-1, 1]             # Weight bounds [min, max] — NOT a grid-search dimension
     optimize_signs: true        # Optimize edge sign pattern

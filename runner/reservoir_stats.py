@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import torch
 
-from utils.formula import calculate_resolvent_metrics
+from utils.formula import calculate_resolvent_metrics, orthogonality_error
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ def compute_reservoir_statistics(model, states=None):
     tri, tri_ratio = calculate_resolvent_metrics(W_res)
     avg_tri = float(np.mean(tri))
     avg_tri_ratio = float(np.mean(tri_ratio))
+    orth_error = orthogonality_error(W_res)
 
     return {
         "node_means": node_means.cpu().numpy(),
@@ -43,6 +44,7 @@ def compute_reservoir_statistics(model, states=None):
         "mean_spread": mean_spread,
         "avg_tri": avg_tri,
         "avg_tri_ratio": avg_tri_ratio,
+        "orthogonality_error": orth_error,
     }
 
 

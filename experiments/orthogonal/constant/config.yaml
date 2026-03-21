@@ -1,0 +1,110 @@
+# ============================================================================
+# Example config.yaml — all available fields with sensible defaults.
+# Copy this file into your experiment folder and modify as needed.
+# Any field that is a YAML list becomes a grid-search dimension automatically.
+# ============================================================================
+
+num_runs: 10                    # Repetitions per grid-search combination (fresh random seed each)
+res_metrics: false              # true = reservoir metrics mode (KQ, gen, MC); false = NRMSE mode
+state_plot: false               # true = save reservoir node activation plots
+plot_deciles: false             # true = plot decile bands in results
+
+# --- Dataset ------------------------------------------------------------------
+data:
+  name: NARMA                   # "NARMA", "Mackey-Glass", or "Lorenz"
+  load: true                    # true = load from .npy files; false = generate fresh data
+  system_order: 10              # NARMA only — 10, 20, or 30
+  sample_len: 6250              # Total number of time steps
+  split_ratio: 0.4              # Fraction of data used for training (rest is test)
+  val_ratio: 0.5                # Optional — fraction of train split held out for validation
+  # --- Mackey-Glass specific (uncomment when using Mackey-Glass) ---
+  # tau: 17                     # Delay parameter
+  # prediction_horizon: 1       # Steps ahead to predict
+  # closed_loop: false          # true = closed-loop free-run evaluation
+  # train_len: 4000             # Optional — explicit train length (overrides split_ratio)
+  # test_len: 2000              # Optional — explicit test length (overrides split_ratio)
+
+# --- ESN ----------------------------------------------------------------------
+esn:
+  spectral_radius: 0.95         # Target spectral radius (null = no rescaling)
+  washout: 200                  # Number of initial timesteps discarded
+  training_noise: 0             # Uniform noise amplitude added during training (0 = off)
+  input_bias: null              # Fixed input signal replacing u[t] (null = use actual input)
+
+  # Activation function
+  f:
+    name: tanh                 # "tanh" or "hysteresis" (both use the Hysteresis class)
+    args:
+      beta: 1.0                 # Steepness of tanh
+      shift: 0.15                # Horizontal shift: tanh(beta * x - shift)
+      binary: false             # true = apply sign() after tanh
+      h_c: 0.0                  # Coercivity — half-width of hysteresis loop (0 = standard tanh)
+      m_r: 1.0                  # Remanence scaling factor (1.0 = standard tanh)
+      decay_rate: 2.0           # Minor loop merge speed (0 = hard branch switch, higher = faster merge)
+
+  # Readout layer
+  readout:
+    name: Ridge                 # "Ridge"
+    args:
+      alpha: 0.0                # Ridge regularization strength
+
+  # Weight matrices
+  W_args:
+    size: 400                   # Reservoir size (must be a perfect square for lattice types)
+
+    # Input weights
+    W_in_args:
+      input_scale: 0.1          # Scaling factor for W_in
+      distribution: fixed       # "uniform" (rand - 0.5) or "fixed" (all ones)
+
+    # Reservoir weights
+    W_res_args:
+      type: constant            # "constant", "random", "tile", "baseline-esn", "orthogonal",
+                                #   or path to a .json tile/matrix file,
+                                #   or path to a directory of .json files (auto-expanded to list)
+      neighborhood: 2            # Number of distance shells: 1 = 4 neighbors (Von Neumann), 2 = 8 (Moore),
+                                #   3 = 12, 4 = 20, ... Also accepts "Von_Neumann" (=1) or "Moore" (=2)
+      self_connection: 0.0      # Self-loop weight on every node (or "from_tile" to resolve from tile JSON metadata)
+      sign_frac: 0.5            # Fraction of edges made negative (or "from_tile")
+      directed_edges_fraction: 0.9  # Fraction of edge pairs made unidirectional (or "from_tile")
+      directed_edges_weights: 0.0   # Weight multiplier for the removed direction (0 = fully remove) (or "from_tile")
+
+      # Tile configuration (used when type: tile)
+      tile:
+        shape: [3, 3]           # Tile dimensions [rows, cols] — NOT a grid-search dimension
+        method: random           # "random" = random tile weights
+
+      # Orthogonal reservoir options
+      alternating_proj: [0, 1, 2, 3,  5, 7, 10, 20, 50]       # Alternating projection iterations on the full W_res (0 = off)
+      orthogonal_tile: false    # false, "exact" (polar decomposition), or "alternating"
+      orthogonal_tile_iters: 50 # Iterations for orthogonal_tile: alternating
+
+    # Feedback weights (optional — omit or set to null to disable)
+    # W_back_args:
+    #   range: [-0.1, 0.1]      # Uniform sampling range for feedback weights
+
+# --- Optimization (for tile search — only used by optimizer scripts) ----------
+optimization:
+  method: cmaes                 # "cmaes" or "hyperneat"
+  num_evals: 3                  # ESN evaluations per candidate (averaged)
+  seed: 42                      # Random seed for optimizer
+
+  cmaes:
+    sigma0: 0.3                 # Initial step size
+    max_generations: 10         # Maximum CMA-ES generations
+    pop_size: 20                # Population size
+    bounds: [-1, 1]             # Weight bounds [min, max] — NOT a grid-search dimension
+    optimize_signs: true        # Optimize edge sign pattern
+    optimize_directions: true   # Optimize edge directionality
+    optimize_self_connections: false  # Optimize self-connection weights
+
+  hyperneat:
+    cppn_config_file: ../../cppn_config.txt  # Path to NEAT/CPPN config (relative to experiment)
+    generations: 300            # NEAT generations
+    threshold: 0.2              # HyperNEAT connection threshold
+    substrate: grid             # "grid" or "custom"
+    substrate_shape: [3, 3]     # Grid substrate dimensions — NOT a grid-search dimension
+    # substrate_coords: [[0,0], [0,1], [1,0], [1,1]]  # Custom substrate coordinates
+
+  output:
+    save_best_tile: true        # Save the best tile as .json

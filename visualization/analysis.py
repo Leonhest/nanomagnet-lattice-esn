@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from matrix import Matrix, load_tile_with_metadata, tile_to_lattice, _is_full_matrix_json, load_full_matrix
 from visualization.plot_matrix import plot_tile
-from utils.formula import spectral_radius, calculate_resolvent_metrics, calculate_avg_degree
+from utils.formula import spectral_radius, calculate_resolvent_metrics, calculate_avg_degree, orthogonality_error
 
 
 # ---------------------------------------------------------------------------
@@ -103,12 +103,15 @@ def analyze_reservoir(W_res, *, G_res=None, tile_G=None, metadata=None,
     in_strength = np.sum(np.abs(W_res), axis=0)
     out_strength = np.sum(np.abs(W_res), axis=1)
 
-    # Eigenvalues
+    # Eigenvalues and singular values
     eigvals = np.linalg.eigvals(W_res)
+    sing_vals = np.linalg.svd(W_res, compute_uv=False)
+    orth_err = orthogonality_error(W_res)
+    cond_num = float(sing_vals[0] / sing_vals[-1]) if sing_vals[-1] > 1e-15 else float("inf")
 
     # --- Figure layout -------------------------------------------------------
-    n_rows = 4 if has_tile else 3
-    fig = plt.figure(figsize=(18, 22 if has_tile else 17))
+    n_rows = (5 if has_tile else 4)
+    fig = plt.figure(figsize=(18, 27 if has_tile else 22))
     gs = fig.add_gridspec(n_rows, 3, hspace=0.35, wspace=0.30)
 
     fig.suptitle(title, fontsize=16, y=0.99)
@@ -219,16 +222,56 @@ def analyze_reservoir(W_res, *, G_res=None, tile_G=None, metadata=None,
     ax22 = fig.add_subplot(gs[2, 2])
     ax22.axis("off")
     meta_lines = _build_meta_lines(W_res, G_res, sr, avg_deg, tri_finite,
-                                   self_loops, metadata, has_tile=has_tile)
+                                   self_loops, metadata, orth_err=orth_err,
+                                   has_tile=has_tile)
     ax22.text(0.05, 0.95, "\n".join(meta_lines), transform=ax22.transAxes,
               fontsize=11, verticalalignment="top", fontfamily="monospace",
               bbox=dict(boxstyle="round,pad=0.5", facecolor="lightyellow", alpha=0.8))
     ax22.set_title("Metadata & Summary")
 
-    # Row 3: Tile graph visualization (full width) — only for tile mode
+    # Row 3: Orthogonality metrics
+    # Col 0: Singular value spectrum
+    ax30 = fig.add_subplot(gs[3, 0])
+    ax30.bar(range(len(sing_vals)), sorted(sing_vals, reverse=True),
+             color="steelblue", edgecolor="none", width=1.0)
+    ax30.axhline(sr, color="red", linestyle="--", alpha=0.7, label=f"SR ({sr:.3f})")
+    ax30.set_title("Singular Value Spectrum")
+    ax30.set_xlabel("Index")
+    ax30.set_ylabel("σ")
+    ax30.legend(fontsize=8)
+
+    # Col 1: Singular value distribution (histogram)
+    ax31 = fig.add_subplot(gs[3, 1])
+    ax31.hist(sing_vals, bins=30, color="steelblue", edgecolor="black", alpha=0.8)
+    ax31.axvline(sr, color="red", linestyle="--", alpha=0.7, label=f"SR ({sr:.3f})")
+    ax31.axvline(np.mean(sing_vals), color="orange", linestyle="--",
+                 label=f"mean={np.mean(sing_vals):.3f}")
+    ax31.set_title("Singular Value Distribution")
+    ax31.set_xlabel("σ")
+    ax31.set_ylabel("Count")
+    ax31.legend(fontsize=8)
+
+    # Col 2: Orthogonality summary text
+    ax32 = fig.add_subplot(gs[3, 2])
+    ax32.axis("off")
+    orth_lines = [
+        f"‖WᵀW − I‖_F = {orth_err:.4f}",
+        f"Condition number = {cond_num:.4f}" if cond_num < 1e6 else f"Condition number = {cond_num:.2e}",
+        "",
+        f"σ_max = {sing_vals[0]:.4f}",
+        f"σ_min = {sing_vals[-1]:.6f}",
+        f"σ_mean = {np.mean(sing_vals):.4f}",
+        f"σ_std  = {np.std(sing_vals):.4f}",
+    ]
+    ax32.text(0.05, 0.95, "\n".join(orth_lines), transform=ax32.transAxes,
+              fontsize=12, verticalalignment="top", fontfamily="monospace",
+              bbox=dict(boxstyle="round,pad=0.5", facecolor="lightyellow", alpha=0.8))
+    ax32.set_title("Orthogonality Metrics")
+
+    # Row 4: Tile graph visualization (full width) — only for tile mode
     if has_tile:
-        ax30 = fig.add_subplot(gs[3, :])
-        plot_tile(tile_G, title="Tile Graph", ax=ax30)
+        ax40 = fig.add_subplot(gs[4, :])
+        plot_tile(tile_G, title="Tile Graph", ax=ax40)
 
     # --- Save / show ---------------------------------------------------------
     if save_path is not None:
@@ -245,6 +288,10 @@ def analyze_reservoir(W_res, *, G_res=None, tile_G=None, metadata=None,
         "spectral_radius": sr,
         "avg_degree": avg_deg,
         "avg_tri": float(tri_finite.mean()) if len(tri_finite) > 0 else None,
+        "orthogonality_error": orth_err,
+        "condition_number": cond_num,
+        "singular_values_mean": float(np.mean(sing_vals)),
+        "singular_values_std": float(np.std(sing_vals)),
         "weight_mean": float(weights.mean()),
         "weight_std": float(weights.std()),
         "n_positive": n_pos,
@@ -261,7 +308,7 @@ def analyze_reservoir(W_res, *, G_res=None, tile_G=None, metadata=None,
 
 
 def _build_meta_lines(W_res, G_res, sr, avg_deg, tri_finite, self_loops,
-                      metadata, *, has_tile):
+                      metadata, *, orth_err=None, has_tile):
     """Build the text lines for the metadata panel."""
     lines = []
     n = W_res.shape[0]
@@ -273,6 +320,8 @@ def _build_meta_lines(W_res, G_res, sr, avg_deg, tri_finite, self_loops,
     lines.append(f"Avg degree: {avg_deg:.2f}")
     if len(tri_finite) > 0:
         lines.append(f"Avg TRI: {tri_finite.mean():.4f}")
+    if orth_err is not None:
+        lines.append(f"Orth error: {orth_err:.4f}")
     lines.append(f"Self-connections: {len(self_loops)}")
 
     if metadata:

@@ -118,7 +118,12 @@ def run_cmaes(config, dataset, output_dir):
     max_gens = cmaes_conf.get("max_generations", 200)
     pop_size = cmaes_conf.get("pop_size", 20)
 
-    x0 = np.random.RandomState(opt_conf.get("seed", 42)).randn(num_params) * 0.5
+    init_rng = np.random.RandomState(opt_conf.get("seed", 42))
+    if "bounds" in cmaes_conf:
+        lo, hi = cmaes_conf["bounds"]
+        x0 = init_rng.uniform(lo, hi, size=num_params)
+    else:
+        x0 = init_rng.randn(num_params) * 0.5
 
     opts = {
         "maxiter": max_gens,

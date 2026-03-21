@@ -556,6 +556,7 @@ def plot_gridsearch_results(
         "mean_spread": "Mean Spread",
         "avg_tri": "Average TRI",
         "avg_tri_ratio": "Average TRI Ratio",
+        "orthogonality_error": "Orthogonality Error",
         "kernel_quality": "Kernel Quality",
         "generalization": "Generalization",
         "memory_capacity": "Memory Capacity",

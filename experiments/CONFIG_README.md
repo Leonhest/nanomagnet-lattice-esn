@@ -114,7 +114,7 @@ All parameters are shared between `"tanh"` and `"hysteresis"` names (they use th
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `type` | string | *required* | Reservoir matrix construction method. See **Reservoir Types** below. |
-| `neighborhood` | string | `"Von_Neumann"` | Lattice connectivity: `"Von_Neumann"` = 4 neighbors (up/down/left/right), `"Moore"` = 8 neighbors (adds diagonals). Only used by lattice-based types. |
+| `neighborhood` | int or string | `"Von_Neumann"` | Number of Euclidean distance shells to include as neighbors. Each shell adds all grid cells at the next unique distance: `1` = 4 neighbors (distance 1, Von Neumann), `2` = 8 (+ distance √2 diagonals, Moore), `3` = 12 (+ distance 2), `4` = 20 (+ distance √5 knight's moves), etc. Also accepts legacy strings `"Von_Neumann"` (= `1`) and `"Moore"` (= `2`). Only used by lattice-based types. |
 | `self_connection` | float | *required* | Weight of self-loops added to every node. `0.0` = no self-connections. |
 | `sign_frac` | float | *required* | Fraction of edges whose weight is negated. `0.0` = all positive, `0.5` = half negative, `1.0` = all negative. |
 | `directed_edges_fraction` | float | *required* | Fraction of bidirectional edge pairs that become unidirectional. `0.0` = fully bidirectional, `1.0` = all edges become one-way. |

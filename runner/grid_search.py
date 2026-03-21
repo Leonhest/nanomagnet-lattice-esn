@@ -80,6 +80,7 @@ def _ensure_nrmse_bucket_initialized(key, nrmse_runs_by_config):
         "mean_spread": [],
         "avg_tri": [],
         "avg_tri_ratio": [],
+        "orthogonality_error": [],
     }
 
 
@@ -107,6 +108,7 @@ def _record_nrmse_run(key, *, test_score, run_result, nrmse_runs_by_config):
     bucket["mean_spread"].append(float(run_result["mean_spread"]))
     bucket["avg_tri"].append(float(run_result["avg_tri"]))
     bucket["avg_tri_ratio"].append(float(run_result["avg_tri_ratio"]))
+    bucket["orthogonality_error"].append(float(run_result["orthogonality_error"]))
 
 
 def _record_res_metrics_run(key, *, metrics, res_metrics_runs_by_config):
@@ -223,6 +225,7 @@ def _aggregate_nrmse_results(nrmse_runs_by_config):
         mean_spread_avg = float(np.mean(bucket["mean_spread"]))
         avg_tri_avg = float(np.mean(bucket["avg_tri"]))
         avg_tri_ratio_avg = float(np.mean(bucket["avg_tri_ratio"]))
+        orth_error_avg = float(np.mean(bucket["orthogonality_error"]))
 
         summary_stats[key] = {
             "score": float(avg_score),
@@ -234,12 +237,14 @@ def _aggregate_nrmse_results(nrmse_runs_by_config):
             "mean_spread": mean_spread_avg,
             "avg_tri": avg_tri_avg,
             "avg_tri_ratio": avg_tri_ratio_avg,
+            "orthogonality_error": orth_error_avg,
             "n_runs": len(score_values),
         }
         logger.info(
             f"Config {key} - Avg NRMSE: {avg_score:.6f} ± {std_score:.6f} | "
             f"Mean(avg): {avg_node_mean_avg:.6f}, Var(avg): {avg_node_variance_avg:.6f}, "
-            f"Mean spread: {mean_spread_avg:.6f}, TRI(avg): {avg_tri_avg:.6f}, TRI ratio(avg): {avg_tri_ratio_avg:.6f}"
+            f"Mean spread: {mean_spread_avg:.6f}, TRI(avg): {avg_tri_avg:.6f}, TRI ratio(avg): {avg_tri_ratio_avg:.6f}, "
+            f"Orth error: {orth_error_avg:.6f}"
         )
     return summary_stats
 

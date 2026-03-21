@@ -201,6 +201,11 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     total_local_kuramoto /= abs_eigvals.sum()
     total_local_kuramoto_grid = total_local_kuramoto.reshape(m, m).tolist()
 
+    # --- Orthogonality metrics -------------------------------------------------
+    sing_vals = np.linalg.svd(W_res, compute_uv=False)
+    orth_err = float(np.linalg.norm(W_res.T @ W_res - np.eye(n), 'fro'))
+    cond_num = float(sing_vals[0] / sing_vals[-1]) if sing_vals[-1] > 1e-15 else float('inf')
+
     # --- Resolvent computations -----------------------------------------------
     I = np.eye(n)
     # z=1: (I - W)^{-1}
@@ -258,7 +263,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
             [{"rowspan": 2, "colspan": 2}, None, {"type": "heatmap"}, {"type": "heatmap"}],
             [None, None, {"type": "heatmap"}, None],
             [{"type": "heatmap"}, {"type": "heatmap"}, {"type": "heatmap"}, {"type": "heatmap"}],
-            [{"type": "heatmap"}, {"type": "heatmap"}, None, None],
+            [{"type": "heatmap"}, {"type": "heatmap"}, {"type": "xy"}, {"type": "xy"}],
             [{"colspan": 2}, None, {"colspan": 2}, None],
         ],
         subplot_titles=[
@@ -272,6 +277,8 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
             "Resolvent Local Phase Coherence",
             "diag (I \u2212 W)\u207b\u00b9",
             "|R\u2c7c\u2c7c| / \u03a3\u2096|R\u2c7c\u2096|",
+            "Singular Value Spectrum",
+            "Singular Value Distribution",
             "Resolvent Phase Flow",
             "Phase Flow",
         ],
@@ -434,6 +441,46 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         row=4, col=2,
     )
 
+    # Trace 12: Singular value spectrum bar chart (row=4, col=3)
+    sv_sorted = np.sort(sing_vals)[::-1]
+    sv_ref = sr if sr > 0 else 1.0  # use spectral radius as reference, fall back to 1
+    fig.add_trace(
+        go.Bar(
+            x=list(range(len(sv_sorted))),
+            y=sv_sorted.tolist(),
+            marker_color="steelblue",
+            showlegend=False,
+            hovertemplate="\u03c3_%{x} = %{y:.4f}<extra></extra>",
+        ),
+        row=4, col=3,
+    )
+    # Reference line at spectral radius
+    fig.add_shape(
+        type="line", x0=-0.5, x1=len(sv_sorted) - 0.5, y0=sv_ref, y1=sv_ref,
+        line=dict(color="red", dash="dash", width=1.5),
+        row=4, col=3,
+    )
+    fig.update_yaxes(title_text="\u03c3", row=4, col=3)
+
+    # Trace 13: Singular value histogram (row=4, col=4)
+    fig.add_trace(
+        go.Histogram(
+            x=sing_vals.tolist(),
+            nbinsx=30,
+            marker_color="steelblue",
+            showlegend=False,
+            hovertemplate="\u03c3=%{x:.3f}<br>count=%{y}<extra></extra>",
+        ),
+        row=4, col=4,
+    )
+    # Reference line at spectral radius
+    fig.add_shape(
+        type="line", x0=sv_ref, x1=sv_ref, y0=0, y1=1, yref="paper",
+        line=dict(color="red", dash="dash", width=1.5),
+        row=4, col=4,
+    )
+    fig.update_xaxes(title_text="\u03c3", row=4, col=4)
+
     # --- Quiver bin colors (HSV color wheel mapped to direction angle) ----------
     import colorsys
     quiver_colors = []
@@ -443,7 +490,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         quiver_colors.append(f"rgb({int(r_*255)},{int(g_*255)},{int(b_*255)})")
 
     # --- Resolvent phase flow quiver (row=5, col=1, colspan=2) — static --------
-    # Traces 12..(12+N_QUIVER_BINS-1): one per direction bin
+    # Traces 14..(14+N_QUIVER_BINS-1): one per direction bin
     qr_bins = _compute_quiver_binned(res_z_phase, m)
     for bi in range(N_QUIVER_BINS):
         fig.add_trace(
@@ -456,7 +503,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         )
 
     # --- Eigenvector phase flow quiver (row=5, col=3, colspan=2) — dynamic ----
-    # Traces (12+N_QUIVER_BINS)..(12+2*N_QUIVER_BINS-1): updates on click
+    # Traces (14+N_QUIVER_BINS)..(14+2*N_QUIVER_BINS-1): updates on click
     q0_bins = _compute_quiver_binned(phase_grids[0], m)
     for bi in range(N_QUIVER_BINS):
         fig.add_trace(
@@ -495,7 +542,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         config={"responsive": True},
     )
 
-    # Annotation indices (12 non-None cells):
+    # Annotation indices (14 non-None cells):
     #   [0] Eigenvalue Spectrum
     #   [1] Magnitude
     #   [2] Local Phase Coherence R
@@ -506,8 +553,10 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     #   [7] Resolvent Local Phase Coherence
     #   [8] diag(Res)
     #   [9] Rel. Self-Infl
-    #   [10] Resolvent Phase Flow
-    #   [11] Phase Flow (dynamic)
+    #   [10] Singular Value Spectrum
+    #   [11] Singular Value Distribution
+    #   [12] Resolvent Phase Flow
+    #   [13] Phase Flow (dynamic)
     js_handler = """
 <script>
 (function() {
@@ -546,7 +595,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     }
 
     var NBINS = """ + str(N_QUIVER_BINS) + """;
-    var QBASE = 12 + NBINS;  // eigvec quiver traces start here
+    var QBASE = 14 + NBINS;  // eigvec quiver traces start here
 
     function arrowSegs(c, r, u, v) {
         var s = 0.4, hs = 0.35, ha = Math.PI / 5;
@@ -806,11 +855,11 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         var shortLabel = '\\u03bb' + idx + ' = ' + re + im + 'j';
 
         var annotations = plot.layout.annotations || [];
-        if (annotations.length >= 12) {
+        if (annotations.length >= 14) {
             annotations[1].text = 'Magnitude |v| \\u2014 ' + label;
             annotations[2].text = 'Local Phase Coherence \\u2014 ' + shortLabel;
             annotations[3].text = 'Phase \\u2220v \\u2014 ' + shortLabel;
-            annotations[11].text ='Phase Flow \\u2014 ' + shortLabel;
+            annotations[13].text ='Phase Flow \\u2014 ' + shortLabel;
             Plotly.relayout(plot, {annotations: annotations});
         }
 
@@ -854,11 +903,11 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
             }, [2]);
 
             var annotations = plot.layout.annotations || [];
-            if (annotations.length >= 12) {
+            if (annotations.length >= 14) {
                 annotations[1].text = 'Total Activity \\u2014 \\u03a3 |\\u03bb\\u1d62|\\u00b7|v\\u1d62|\\u00b2';
                 annotations[2].text = 'Local Phase Coherence (weighted total)';
                 annotations[3].text = '(inactive during Total Activity)';
-                annotations[11].text ='(inactive during Total Activity)';
+                annotations[13].text ='(inactive during Total Activity)';
                 Plotly.relayout(plot, {annotations: annotations});
             }
         } else {
@@ -898,11 +947,11 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
             var shortLabel = '\\u03bb' + idx + ' = ' + re + im + 'j';
 
             var annotations = plot.layout.annotations || [];
-            if (annotations.length >= 12) {
+            if (annotations.length >= 14) {
                 annotations[1].text = 'Magnitude |v| \\u2014 ' + label;
                 annotations[2].text = 'Local Phase Coherence \\u2014 ' + shortLabel;
                 annotations[3].text = 'Phase \\u2220v \\u2014 ' + shortLabel;
-                annotations[11].text ='Phase Flow \\u2014 ' + shortLabel;
+                annotations[13].text ='Phase Flow \\u2014 ' + shortLabel;
                 Plotly.relayout(plot, {annotations: annotations});
             }
         }
@@ -986,6 +1035,11 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
   <button id="removal-btn">Removal Mode</button>
   <button id="download-btn">Download W_res JSON</button>
   <span id="removal-count"></span>
+</div>
+<div id="orth-stats" style="margin-bottom:10px; font-size:13px; color:#444; font-family:monospace;">
+  \u2016W\u1d40W \u2212 I\u2016_F = {orth_err:.4f} &nbsp;|&nbsp;
+  Condition number = {f'{cond_num:.4f}' if cond_num < 1e6 else f'{cond_num:.2e}'} &nbsp;|&nbsp;
+  \u03c3: mean={np.mean(sing_vals):.4f}, std={np.std(sing_vals):.4f}, min={sing_vals[-1]:.6f}, max={sing_vals[0]:.4f}
 </div>
 <script type="application/json" id="eigvec-data">
 {json.dumps(eigvec_data)}

@@ -341,27 +341,67 @@ class Matrix:
 
 
     def tetragonal(self, dim, periodic=False, neighborhood="Von_Neumann", dist_function=None):
-        G = nx.grid_graph(dim, periodic=periodic)
+        m, n = dim
+        G = nx.Graph()
+        for i in range(m):
+            for j in range(n):
+                G.add_node((i, j))
 
-        if neighborhood == "Moore":
-            m, n = dim
-            for i in range(m):
-                for j in range(n):
-                    u = (i, j)
-                    # Diagonals: (i-1, j-1), (i-1, j+1), (i+1, j-1), (i+1, j+1)
-                    diags = [(i-1, j-1), (i-1, j+1), (i+1, j-1), (i+1, j+1)]
-                    for di, dj in diags:
-                        if periodic:
-                            v = (di % m, dj % n)
-                            G.add_edge(u, v)
-                        elif 0 <= di < m and 0 <= dj < n:
-                            v = (di, dj)
-                            G.add_edge(u, v)
+        # Resolve neighborhood to a list of (di, dj) offsets
+        if neighborhood == "Von_Neumann":
+            offsets = self._shell_offsets(1)
+        elif neighborhood == "Moore":
+            offsets = self._shell_offsets(2)
+        elif isinstance(neighborhood, int) and neighborhood >= 1:
+            offsets = self._shell_offsets(neighborhood)
+        else:
+            raise ValueError(f"Unknown neighborhood: {neighborhood}. Use 'Von_Neumann', 'Moore', or an integer radius >= 1.")
+
+        for i in range(m):
+            for j in range(n):
+                for di, dj in offsets:
+                    ni, nj = i + di, j + dj
+                    if periodic:
+                        G.add_edge((i, j), (ni % m, nj % n))
+                    elif 0 <= ni < m and 0 <= nj < n:
+                        G.add_edge((i, j), (ni, nj))
 
         pos = dict(zip(G, G))
         nx.set_node_attributes(G, pos, 'pos')
 
-        return G    
+        return G
+
+    @staticmethod
+    def _shell_offsets(num_shells):
+        """Return neighbor offsets for the first `num_shells` distance shells.
+
+        Shells are ranked by Euclidean distance from the origin:
+          shell 1: distance 1   — (±1,0), (0,±1)           — 4 offsets  (Von Neumann)
+          shell 2: distance √2  — (±1,±1)                   — 4 offsets  (+ diagonals = Moore)
+          shell 3: distance 2   — (±2,0), (0,±2)            — 4 offsets
+          shell 4: distance √5  — (±1,±2), (±2,±1)          — 8 offsets
+          shell 5: distance 2√2 — (±2,±2)                   — 4 offsets
+          ...
+        """
+        # Generate candidate offsets up to a generous bound
+        bound = num_shells + 1
+        candidates = {}
+        while True:
+            candidates.clear()
+            for di in range(-bound, bound + 1):
+                for dj in range(-bound, bound + 1):
+                    if (di, dj) == (0, 0):
+                        continue
+                    dist_sq = di * di + dj * dj
+                    candidates.setdefault(dist_sq, []).append((di, dj))
+            if len(candidates) >= num_shells:
+                break
+            bound += 1
+
+        offsets = []
+        for dist_sq in sorted(candidates)[:num_shells]:
+            offsets.extend(candidates[dist_sq])
+        return offsets
 
     def rectangular(self, m, n, periodic=False, neighborhood="Von_Neumann", dist_function=None):
         G = self.tetragonal([m, n], periodic=periodic, neighborhood=neighborhood)

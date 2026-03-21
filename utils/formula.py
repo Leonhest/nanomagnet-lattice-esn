@@ -44,6 +44,16 @@ def calculate_resolvent_metrics(W_res):
         print("Error: The matrix (I - W_res) is singular and cannot be inverted.")
         return np.full(n_reservoir, np.nan), np.full(n_reservoir, np.nan)
 
+def orthogonality_error(W_res):
+    """Frobenius norm of W^T W - I. Zero means perfectly orthogonal."""
+    if isinstance(W_res, torch.Tensor):
+        W_res = W_res.detach().cpu().numpy()
+    else:
+        W_res = np.asarray(W_res)
+    WtW = W_res.T @ W_res
+    return float(np.linalg.norm(WtW - np.eye(WtW.shape[0]), 'fro'))
+
+
 def calculate_avg_degree(W_res):
     """
     Calculates the average number of incoming edges (in-degree) for all nodes in the reservoir.
