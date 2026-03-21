@@ -60,7 +60,7 @@ def _plot_1d(x, y, tick_labels, x_label, y_label, title, filepath):
     plt.figure()
     plt.plot(x, y, marker="o")
     if tick_labels is not None:
-        plt.xticks(range(len(tick_labels)), tick_labels)
+        plt.xticks(range(len(tick_labels)), tick_labels, rotation=45, ha="right")
     plt.xlabel(x_label)
     plt.ylabel(y_label)
     plt.title(title)

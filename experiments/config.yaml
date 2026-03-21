@@ -63,10 +63,10 @@ esn:
                                 #   or path to a .json tile/matrix file,
                                 #   or path to a directory of .json files (auto-expanded to list)
       neighborhood: Moore       # "Von_Neumann" (4-connected) or "Moore" (8-connected)
-      self_connection: 0.0      # Self-loop weight on every node
-      sign_frac: 0.5            # Fraction of edges made negative
-      directed_edges_fraction: 0.9  # Fraction of edge pairs made unidirectional
-      directed_edges_weights: 0.0   # Weight multiplier for the removed direction (0 = fully remove)
+      self_connection: 0.0      # Self-loop weight on every node (or "from_tile" to resolve from tile JSON metadata)
+      sign_frac: 0.5            # Fraction of edges made negative (or "from_tile")
+      directed_edges_fraction: 0.9  # Fraction of edge pairs made unidirectional (or "from_tile")
+      directed_edges_weights: 0.0   # Weight multiplier for the removed direction (0 = fully remove) (or "from_tile")
 
       # Tile configuration (used when type: tile)
       tile:

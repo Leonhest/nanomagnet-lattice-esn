@@ -50,6 +50,13 @@ def _extract_param_key(conf, param_names):
         for k in keys:
             cur = cur[k]
         # if list in base config, current should now be a scalar value for this specific config
+        # Enhance "tile" type with its method for more descriptive plot labels
+        if path == "esn.W_args.W_res_args.type" and cur == "tile":
+            try:
+                method = conf["esn"]["W_args"]["W_res_args"]["tile"]["method"]
+                cur = f"{method} tile"
+            except (KeyError, TypeError):
+                pass
         param_values_tuple.append(cur)
     return tuple(param_values_tuple)
 

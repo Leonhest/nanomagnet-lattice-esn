@@ -135,6 +135,18 @@ All parameters are shared between `"tanh"` and `"hysteresis"` names (they use th
 | `"path/to/tile.json"` | Load a pre-trained tile from a JSON file and tile it onto the lattice. |
 | `"path/to/directory/"` | Auto-expanded into a list of all `.json` files in the directory (grid-search over saved tiles). |
 
+##### `"from_tile"` Value Resolution
+
+When `type` is a path to a `.json` tile file, any `W_res_args` field can be set to the string `"from_tile"` instead of a numeric value. Before the run starts, `ConfigLoader` reads the tile JSON's `metadata.params` dictionary and replaces each `"from_tile"` field with the corresponding value stored under the key `esn.W_args.W_res_args.<field>`. This lets optimized tiles carry their own parameter values (e.g., `self_connection`, `sign_frac`) so experiments automatically use the settings the tile was optimized with.
+
+```yaml
+W_res_args:
+  type: path/to/optimized_tile.json
+  self_connection: from_tile    # resolved from tile JSON metadata
+  sign_frac: from_tile          # resolved from tile JSON metadata
+  directed_edges_fraction: 0.9  # kept as-is
+```
+
 #### `esn.W_args.W_res_args.tile` — Tile Configuration
 
 Only used when `type: tile`.

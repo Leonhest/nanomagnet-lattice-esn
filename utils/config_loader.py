@@ -1,4 +1,5 @@
 from re import L
+import json
 import yaml
 import os
 import copy
@@ -54,10 +55,11 @@ class ConfigLoader():
             config = copy.deepcopy(base_config)
             for param_name, param_value in zip(param_names, combo):
                 ConfigLoader._set_nested_value(config, param_name, param_value)
+            ConfigLoader._resolve_from_tile_params(config)
             # Generate num_runs copies of this config (each with different random initialization)
             for _ in range(num_runs):
                 configs.append(ConfigLoader(exp_path, copy.deepcopy(config)))
-        
+
         return configs, param_names
     
     @staticmethod
@@ -108,6 +110,32 @@ class ConfigLoader():
             result = _expand(type_val)
             if isinstance(result, list):
                 config["esn"]["W_args"]["W_res_args"]["type"] = result
+
+    @staticmethod
+    def _resolve_from_tile_params(config):
+        """Resolve config values set to 'from_tile' using the tile JSON's metadata.params."""
+        try:
+            W_res_args = config["esn"]["W_args"]["W_res_args"]
+            tile_path = W_res_args.get("type")
+        except (KeyError, TypeError):
+            return
+
+        if not isinstance(tile_path, str) or not tile_path.endswith(".json"):
+            return
+
+        # Find all W_res_args values set to "from_tile"
+        from_tile_keys = [k for k, v in W_res_args.items() if v == "from_tile"]
+        if not from_tile_keys:
+            return
+
+        with open(tile_path, "r") as f:
+            tile_data = json.load(f)
+        params = tile_data.get("metadata", {}).get("params", {})
+
+        for key in from_tile_keys:
+            param_path = f"esn.W_args.W_res_args.{key}"
+            if param_path in params:
+                W_res_args[key] = params[param_path]
 
     @staticmethod
     def _find_list_parameters(config, prefix="", result=None):
