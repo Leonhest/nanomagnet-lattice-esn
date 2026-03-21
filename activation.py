@@ -49,6 +49,13 @@ class Hysteresis(nn.Module):
         return self.m_r * torch.tanh(self.beta * (x + self.h_c) - self.shift)
 
     def forward(self, x):
+        # Fast path: no hysteresis — skip all state tracking
+        if self.h_c == 0:
+            output = self.m_r * torch.tanh(self.beta * x - self.shift)
+            if self.binary:
+                output = torch.sign(output)
+            return output
+
         if self.prev_output is None:
             self.prev_output = torch.zeros_like(x)
             self.prev_x = torch.zeros_like(x)

@@ -62,6 +62,7 @@ esn:
       type: constant            # "constant", "random", "tile", "baseline-esn", "orthogonal",
                                 #   or path to a .json tile/matrix file,
                                 #   or path to a directory of .json files (auto-expanded to list)
+      tile_replicas: false      # true = treat directory contents as replicas to average (not grid search)
       neighborhood: 2            # Number of distance shells: 1 = 4 neighbors (Von Neumann), 2 = 8 (Moore),
                                 #   3 = 12, 4 = 20, ... Also accepts "Von_Neumann" (=1) or "Moore" (=2)
       self_connection: 0.0      # Self-loop weight on every node (or "from_tile" to resolve from tile JSON metadata)
@@ -86,6 +87,7 @@ esn:
 # --- Optimization (for tile search — only used by optimizer scripts) ----------
 optimization:
   method: cmaes                 # "cmaes" or "hyperneat"
+  num_runs: 1                   # Optimization runs per config (each with seed + run_index)
   num_evals: 3                  # ESN evaluations per candidate (averaged)
   seed: 42                      # Random seed for optimizer
 

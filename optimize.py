@@ -70,6 +70,18 @@ def _make_tile_filename(method, param_names, config):
     return "_".join(parts) + ".json"
 
 
+def _make_tile_dirname(method, param_names, config):
+    parts = [f"best_tiles_{method}"]
+    for name in param_names:
+        keys = name.split(".")
+        cur = config
+        for k in keys:
+            cur = cur[k]
+        short_name = keys[-1]
+        parts.append(f"{short_name}={cur}")
+    return "_".join(parts)
+
+
 def _run_optimization(method, config, dataset, exp_path):
     # Disable internal tile saving — we handle it ourselves
     config.setdefault("optimization", {}).setdefault("output", {})["save_best_tile"] = False
@@ -101,8 +113,10 @@ def main(exp_path):
         logger.info("Optimization method is 'static'. Nothing to optimize. Use run.py instead.")
         return
 
+    opt_num_runs = opt_conf.get("num_runs", 1)
+
     configs, param_names = _generate_grid_configs(base_config)
-    logger.info(f"Grid search: {len(configs)} config(s)")
+    logger.info(f"Grid search: {len(configs)} config(s), {opt_num_runs} optimization run(s) each")
 
     logger.info("Loading dataset...")
     dataset = NARMA10(base_config["data"])
@@ -117,18 +131,37 @@ def main(exp_path):
 
         logger.info(f"Config {i+1}/{len(configs)} ({param_desc})")
 
-        best_tile, best_nrmse = _run_optimization(method, config, dataset, exp_path)
-        logger.info(f"Finished. Best NRMSE: {best_nrmse:.6f}")
+        for run_idx in range(opt_num_runs):
+            run_config = copy.deepcopy(config)
+            base_seed = run_config.get("optimization", {}).get("seed", 42)
+            run_config.setdefault("optimization", {})["seed"] = base_seed + run_idx
 
-        if best_tile is not None:
-            filename = _make_tile_filename(method, param_names, config)
-            save_path = os.path.join(exp_path, filename)
-            save_tile(best_tile, save_path, metadata={
-                "method": method,
-                "best_nrmse": best_nrmse,
-                "params": dict(zip(param_names, param_values)) if param_names else {},
-            })
-            logger.info(f"Tile saved to {save_path}")
+            if opt_num_runs > 1:
+                logger.info(f"  Optimization run {run_idx+1}/{opt_num_runs} (seed={base_seed + run_idx})")
+
+            best_tile, best_nrmse = _run_optimization(method, run_config, dataset, exp_path)
+            logger.info(f"  Finished. Best NRMSE: {best_nrmse:.6f}")
+
+            if best_tile is not None:
+                metadata = {
+                    "method": method,
+                    "best_nrmse": best_nrmse,
+                    "params": dict(zip(param_names, param_values)) if param_names else {},
+                }
+
+                if opt_num_runs > 1:
+                    metadata["run_index"] = run_idx
+                    metadata["seed"] = base_seed + run_idx
+                    dir_name = _make_tile_dirname(method, param_names, config)
+                    tile_dir = os.path.join(exp_path, dir_name)
+                    os.makedirs(tile_dir, exist_ok=True)
+                    save_path = os.path.join(tile_dir, f"run_{run_idx}.json")
+                else:
+                    filename = _make_tile_filename(method, param_names, config)
+                    save_path = os.path.join(exp_path, filename)
+
+                save_tile(best_tile, save_path, metadata=metadata)
+                logger.info(f"  Tile saved to {save_path}")
 
 
 if __name__ == "__main__":

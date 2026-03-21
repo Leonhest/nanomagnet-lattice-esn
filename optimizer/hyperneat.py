@@ -1,5 +1,6 @@
 import logging
 import os
+import random
 
 import neat
 import networkx as nx
@@ -65,6 +66,10 @@ def run_hyperneat(config, dataset, output_dir):
     num_evals = opt_conf.get("num_evals", 1)
     threshold = hn_conf.get("threshold", 0.2)
     generations = hn_conf.get("generations", 300)
+
+    seed = opt_conf.get("seed", 42)
+    random.seed(seed)
+    np.random.seed(seed)
 
     tile_shape = tuple(W_args.get("W_res_args", {}).get("tile", {}).get("shape", [3, 3]))
     substrate_coords = _build_substrate_coords(hn_conf, tile_shape)

@@ -52,13 +52,17 @@ def _encode_column(values):
         return encoded, tick_labels
 
 
-def _plot_1d(x, y, tick_labels, x_label, y_label, title, filepath):
+def _plot_1d(x, y, tick_labels, x_label, y_label, title, filepath, *, std=None):
     """Plot a 1D line chart and save as PNG."""
     order = np.argsort(x)
     x, y = x[order], y[order]
+    if std is not None:
+        std = std[order]
 
     plt.figure()
     plt.plot(x, y, marker="o")
+    if std is not None:
+        plt.fill_between(x, y - std, y + std, alpha=0.2)
     if tick_labels is not None:
         plt.xticks(range(len(tick_labels)), tick_labels, rotation=45, ha="right")
     plt.xlabel(x_label)
@@ -100,7 +104,7 @@ def _select_line_group(results):
     return group_idx, x_idx, unique_counts
 
 
-def _plot_2d_heatmap(param_names, results, exp_path, metric_label, suffix):
+def _plot_2d_heatmap(param_names, results, exp_path, metric_label, suffix, *, std_map=None):
     """
     Plot a 2D heatmap: param_names[0] on x-axis, param_names[1] on y-axis,
     metric as cell color with text annotations. Saved as PNG.
@@ -118,11 +122,16 @@ def _plot_2d_heatmap(param_names, results, exp_path, metric_label, suffix):
     y_unique = np.unique(y_enc)
 
     grid = np.full((len(y_unique), len(x_unique)), np.nan)
+    std_grid = np.full((len(y_unique), len(x_unique)), np.nan) if std_map else None
     x_idx_map = {v: i for i, v in enumerate(x_unique)}
     y_idx_map = {v: i for i, v in enumerate(y_unique)}
 
-    for xi, yi, s in zip(x_enc, y_enc, scores):
+    for idx, (xi, yi, s) in enumerate(zip(x_enc, y_enc, scores)):
         grid[y_idx_map[yi], x_idx_map[xi]] = s
+        if std_map:
+            pv = results[idx][0]
+            if pv in std_map:
+                std_grid[y_idx_map[yi], x_idx_map[xi]] = std_map[pv]
 
     fig, ax = plt.subplots(figsize=(max(6, len(x_unique) * 0.8 + 2), max(5, len(y_unique) * 0.6 + 2)))
     im = ax.imshow(grid, aspect="auto", origin="lower", cmap="plasma")
@@ -133,7 +142,10 @@ def _plot_2d_heatmap(param_names, results, exp_path, metric_label, suffix):
         for i in range(len(x_unique)):
             val = grid[j, i]
             if np.isfinite(val):
-                ax.text(i, j, f"{val:.4f}", ha="center", va="center", fontsize=7,
+                text = f"{val:.4f}"
+                if std_grid is not None and np.isfinite(std_grid[j, i]):
+                    text += f"\n\u00b1{std_grid[j, i]:.4f}"
+                ax.text(i, j, text, ha="center", va="center", fontsize=6,
                         color="white" if val < (np.nanmin(grid) + np.nanmax(grid)) / 2 else "black")
 
     x_labels = x_ticks if x_ticks is not None else [f"{v:g}" if v == int(v) else f"{v}" for v in x_unique]
@@ -155,7 +167,7 @@ def _plot_2d_heatmap(param_names, results, exp_path, metric_label, suffix):
     plt.close()
 
 
-def _plot_2d_lines(param_names, results, exp_path, metric_label, suffix, *, max_groups=6):
+def _plot_2d_lines(param_names, results, exp_path, metric_label, suffix, *, max_groups=6, std_map=None):
     """
     Plot overlaid lines. Uses _select_line_group to pick the line group
     (categorical preferred) vs x-axis. Skips if line group has more than
@@ -170,9 +182,12 @@ def _plot_2d_lines(param_names, results, exp_path, metric_label, suffix, *, max_
         return
 
     groups = defaultdict(list)
+    std_groups = defaultdict(list) if std_map else None
     for pv, score in results:
         p = list(pv)
         groups[p[group_idx]].append((p[x_idx], score))
+        if std_map and pv in std_map:
+            std_groups[p[group_idx]].append((p[x_idx], std_map[pv]))
 
     plt.figure()
     for group_val in sorted(groups.keys(), key=lambda v: str(v)):
@@ -185,6 +200,11 @@ def _plot_2d_lines(param_names, results, exp_path, metric_label, suffix, *, max_
         y_sorted = np.array(scores)[order]
         label = _display_label(group_val)
         plt.plot(x_sorted, y_sorted, marker="o", label=f"{display_names[group_idx]}={label}")
+
+        if std_groups and group_val in std_groups:
+            std_pairs = std_groups[group_val]
+            std_vals = np.array([p[1] for p in std_pairs])[order]
+            plt.fill_between(x_sorted, y_sorted - std_vals, y_sorted + std_vals, alpha=0.15)
 
     # Set x ticks using first group's encoding (all groups share the same x values)
     first_group = groups[sorted(groups.keys(), key=lambda v: str(v))[0]]
@@ -288,7 +308,7 @@ def _plot_3d_scatter(param_names, results, exp_path, metric_label, suffix):
     print(f"Interactive figure saved to {filename}")
 
 
-def _plot_kq_gen_combined(param_names, summary_stats, exp_path):
+def _plot_kq_gen_combined(param_names, summary_stats, exp_path, *, include_std=False):
     """
     If we're doing a 1D grid search and both `kernel_quality` and `generalization`
     exist, plot them on the same figure (KQ+Gen) and return the keys that should
@@ -328,6 +348,20 @@ def _plot_kq_gen_combined(param_names, summary_stats, exp_path):
     plt.plot(x_kq, y_kq, marker="o", label="Kernel Quality", linewidth=2)
     plt.plot(x_gen, y_gen, marker="s", label="Generalization", linewidth=2)
 
+    if include_std:
+        kq_std = np.array([
+            float(stats.get("kernel_quality_std", 0))
+            for param_tuple, stats in summary_stats.items()
+            if isinstance(param_tuple, tuple) and isinstance(stats, dict) and "kernel_quality" in stats
+        ], dtype=float)[order_kq]
+        gen_std = np.array([
+            float(stats.get("generalization_std", 0))
+            for param_tuple, stats in summary_stats.items()
+            if isinstance(param_tuple, tuple) and isinstance(stats, dict) and "generalization" in stats
+        ], dtype=float)[order_gen]
+        plt.fill_between(x_kq, y_kq - kq_std, y_kq + kq_std, alpha=0.2)
+        plt.fill_between(x_gen, y_gen - gen_std, y_gen + gen_std, alpha=0.2)
+
     if x_kq_ticks is not None:
         plt.xticks(range(len(x_kq_ticks)), x_kq_ticks)
 
@@ -338,7 +372,8 @@ def _plot_kq_gen_combined(param_names, summary_stats, exp_path):
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
 
-    filename = f"{exp_path}/plot_{display_name}_kq_gen.png"
+    suffix = "_with_std" if include_std else ""
+    filename = f"{exp_path}/plot_{display_name}_kq_gen{suffix}.png"
     plt.savefig(filename)
     print(f"Plot saved to {filename}")
     plt.close()
@@ -346,7 +381,8 @@ def _plot_kq_gen_combined(param_names, summary_stats, exp_path):
     return {"kernel_quality", "generalization"}
 
 
-def _plot_2d_kq_gen_heatmap(param_names, kq_results, gen_results, exp_path):
+def _plot_2d_kq_gen_heatmap(param_names, kq_results, gen_results, exp_path, *,
+                            kq_std_map=None, gen_std_map=None):
     """
     1x3 subplot heatmap: KQ, Gen, and KQ-Gen side by side.
     Each cell annotated with its own value only.
@@ -375,6 +411,8 @@ def _plot_2d_kq_gen_heatmap(param_names, kq_results, gen_results, exp_path):
     grid_kq = np.full((len(y_unique), len(x_unique)), np.nan)
     grid_gen = np.full((len(y_unique), len(x_unique)), np.nan)
     grid_diff = np.full((len(y_unique), len(x_unique)), np.nan)
+    std_grid_kq = np.full((len(y_unique), len(x_unique)), np.nan) if kq_std_map else None
+    std_grid_gen = np.full((len(y_unique), len(x_unique)), np.nan) if gen_std_map else None
 
     for j, yu in enumerate(y_unique):
         for i, xu in enumerate(x_unique):
@@ -387,18 +425,31 @@ def _plot_2d_kq_gen_heatmap(param_names, kq_results, gen_results, exp_path):
                 grid_gen[j, i] = gen_val
             if kq_val is not None and gen_val is not None:
                 grid_diff[j, i] = kq_val - gen_val
+            # Look up std by param_tuple
+            if kq_std_map:
+                for pt, std_val in kq_std_map.items():
+                    pt_key = (list(pt)[0], list(pt)[1])
+                    if pt_key == key:
+                        std_grid_kq[j, i] = std_val
+                        break
+            if gen_std_map:
+                for pt, std_val in gen_std_map.items():
+                    pt_key = (list(pt)[0], list(pt)[1])
+                    if pt_key == key:
+                        std_grid_gen[j, i] = std_val
+                        break
 
     x_labels = x_ticks if x_ticks is not None else [f"{v:g}" if v == int(v) else f"{v}" for v in x_unique]
     y_labels = y_ticks if y_ticks is not None else [f"{v:g}" if v == int(v) else f"{v}" for v in y_unique]
 
     panels = [
-        (grid_kq, "Kernel Quality"),
-        (grid_gen, "Generalization"),
-        (grid_diff, "KQ - Gen"),
+        (grid_kq, "Kernel Quality", std_grid_kq),
+        (grid_gen, "Generalization", std_grid_gen),
+        (grid_diff, "KQ - Gen", None),
     ]
 
     fig, axes = plt.subplots(1, 3, figsize=(max(6, len(x_unique) * 0.8 + 2) * 3, max(5, len(y_unique) * 0.6 + 2)))
-    for ax, (grid, title) in zip(axes, panels):
+    for ax, (grid, title, std_grid) in zip(axes, panels):
         im = ax.imshow(grid, aspect="auto", origin="lower", cmap="plasma")
         fig.colorbar(im, ax=ax, label=title)
 
@@ -406,7 +457,10 @@ def _plot_2d_kq_gen_heatmap(param_names, kq_results, gen_results, exp_path):
             for i in range(len(x_unique)):
                 val = grid[j, i]
                 if np.isfinite(val):
-                    ax.text(i, j, f"{val:.4f}", ha="center", va="center", fontsize=7,
+                    text = f"{val:.4f}"
+                    if std_grid is not None and np.isfinite(std_grid[j, i]):
+                        text += f"\n\u00b1{std_grid[j, i]:.4f}"
+                    ax.text(i, j, text, ha="center", va="center", fontsize=6,
                             color="white" if val < (np.nanmin(grid) + np.nanmax(grid)) / 2 else "black")
 
         ax.set_xticks(range(len(x_unique)))
@@ -420,13 +474,15 @@ def _plot_2d_kq_gen_heatmap(param_names, kq_results, gen_results, exp_path):
     plt.tight_layout()
 
     param_str = "_vs_".join(display_names)
-    filename = f"{exp_path}/plot_{param_str}_kq_gen_heatmap.png"
+    suffix = "_with_std" if (kq_std_map or gen_std_map) else ""
+    filename = f"{exp_path}/plot_{param_str}_kq_gen{suffix}_heatmap.png"
     plt.savefig(filename, dpi=150)
     print(f"Plot saved to {filename}")
     plt.close()
 
 
-def _plot_2d_kq_gen_lines(param_names, kq_results, gen_results, exp_path):
+def _plot_2d_kq_gen_lines(param_names, kq_results, gen_results, exp_path, *,
+                          kq_std_map=None, gen_std_map=None):
     """
     Combined KQ/Gen line plot. KQ lines are solid, Gen lines are dashed.
     Same color for same param value. Max 3 line group values (6 lines total).
@@ -441,14 +497,20 @@ def _plot_2d_kq_gen_lines(param_names, kq_results, gen_results, exp_path):
         return
 
     kq_groups = defaultdict(list)
+    kq_std_groups = defaultdict(list) if kq_std_map else None
     for pv, score in kq_results:
         p = list(pv)
         kq_groups[p[group_idx]].append((p[x_idx], score))
+        if kq_std_map and pv in kq_std_map:
+            kq_std_groups[p[group_idx]].append((p[x_idx], kq_std_map[pv]))
 
     gen_groups = defaultdict(list)
+    gen_std_groups = defaultdict(list) if gen_std_map else None
     for pv, score in gen_results:
         p = list(pv)
         gen_groups[p[group_idx]].append((p[x_idx], score))
+        if gen_std_map and pv in gen_std_map:
+            gen_std_groups[p[group_idx]].append((p[x_idx], gen_std_map[pv]))
 
     plt.figure()
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
@@ -463,8 +525,13 @@ def _plot_2d_kq_gen_lines(param_names, kq_results, gen_results, exp_path):
         scores = [p[1] for p in pairs]
         x_enc, x_ticks = _encode_column(raw_x)
         order = np.argsort(x_enc)
-        plt.plot(x_enc[order], np.array(scores)[order], marker="o", linestyle="-",
+        x_sorted = x_enc[order]
+        y_sorted = np.array(scores)[order]
+        plt.plot(x_sorted, y_sorted, marker="o", linestyle="-",
                  color=color, label=f"KQ {display_names[group_idx]}={label_str}")
+        if kq_std_groups and group_val in kq_std_groups:
+            std_vals = np.array([p[1] for p in kq_std_groups[group_val]])[order]
+            plt.fill_between(x_sorted, y_sorted - std_vals, y_sorted + std_vals, alpha=0.15, color=color)
 
         # Gen line (dashed)
         if group_val in gen_groups:
@@ -473,8 +540,13 @@ def _plot_2d_kq_gen_lines(param_names, kq_results, gen_results, exp_path):
             scores = [p[1] for p in pairs]
             x_enc, _ = _encode_column(raw_x)
             order = np.argsort(x_enc)
-            plt.plot(x_enc[order], np.array(scores)[order], marker="s", linestyle="--",
+            x_sorted = x_enc[order]
+            y_sorted = np.array(scores)[order]
+            plt.plot(x_sorted, y_sorted, marker="s", linestyle="--",
                      color=color, label=f"Gen {display_names[group_idx]}={label_str}")
+            if gen_std_groups and group_val in gen_std_groups:
+                std_vals = np.array([p[1] for p in gen_std_groups[group_val]])[order]
+                plt.fill_between(x_sorted, y_sorted - std_vals, y_sorted + std_vals, alpha=0.15, color=color)
 
     # Set x ticks from first group
     first_group = kq_groups[sorted(kq_groups.keys(), key=lambda v: str(v))[0]]
@@ -490,7 +562,8 @@ def _plot_2d_kq_gen_lines(param_names, kq_results, gen_results, exp_path):
     plt.tight_layout()
 
     param_str = "_vs_".join(display_names)
-    filename = f"{exp_path}/plot_{param_str}_kq_gen_lines.png"
+    suffix = "_with_std" if (kq_std_map or gen_std_map) else ""
+    filename = f"{exp_path}/plot_{param_str}_kq_gen{suffix}_lines.png"
     plt.savefig(filename, dpi=150)
     print(f"Plot saved to {filename}")
     plt.close()
@@ -518,8 +591,26 @@ def _plot_kq_gen_combined_2d(param_names, summary_stats, exp_path):
     if not kq_results or not gen_results:
         return set()
 
+    # Without std
     _plot_2d_kq_gen_heatmap(param_names, kq_results, gen_results, exp_path)
     _plot_2d_kq_gen_lines(param_names, kq_results, gen_results, exp_path)
+
+    # With std
+    kq_std_map = {
+        param_tuple: float(stats["kernel_quality_std"])
+        for param_tuple, stats in summary_stats.items()
+        if isinstance(param_tuple, tuple) and isinstance(stats, dict) and "kernel_quality_std" in stats
+    }
+    gen_std_map = {
+        param_tuple: float(stats["generalization_std"])
+        for param_tuple, stats in summary_stats.items()
+        if isinstance(param_tuple, tuple) and isinstance(stats, dict) and "generalization_std" in stats
+    }
+    if kq_std_map or gen_std_map:
+        _plot_2d_kq_gen_heatmap(param_names, kq_results, gen_results, exp_path,
+                                kq_std_map=kq_std_map, gen_std_map=gen_std_map)
+        _plot_2d_kq_gen_lines(param_names, kq_results, gen_results, exp_path,
+                              kq_std_map=kq_std_map, gen_std_map=gen_std_map)
 
     return {"kernel_quality", "generalization"}
 
@@ -563,12 +654,14 @@ def plot_gridsearch_results(
     }
 
     skip_keys = _plot_kq_gen_combined(param_names, summary_stats, exp_path)
+    _plot_kq_gen_combined(param_names, summary_stats, exp_path, include_std=True)
     skip_keys |= _plot_kq_gen_combined_2d(param_names, summary_stats, exp_path)
 
     for stat_key, stat_label in metric_specs.items():
         if stat_key in skip_keys:
             continue
 
+        std_key = f"{stat_key}_std"
         stat_results = [
             (param_tuple, float(stats[stat_key]))
             for param_tuple, stats in summary_stats.items()
@@ -578,9 +671,18 @@ def plot_gridsearch_results(
         if not stat_results:
             continue
 
+        # Build std map for metrics that have std
+        std_map = {}
+        for param_tuple, stats in summary_stats.items():
+            if isinstance(param_tuple, tuple) and isinstance(stats, dict) and std_key in stats:
+                std_map[param_tuple] = float(stats[std_key])
+        has_std = bool(std_map)
+
         # Apply filter threshold only to NRMSE
         if stat_key == "score" and filter_threshold is not None:
             stat_results = [(pv, s) for pv, s in stat_results if s <= filter_threshold]
+            if has_std:
+                std_map = {pv: s for pv, s in std_map.items() if pv in {r[0] for r in stat_results}}
             if not stat_results:
                 print(f"No results with {stat_label} <= {filter_threshold} to plot")
                 continue
@@ -596,9 +698,21 @@ def plot_gridsearch_results(
             _plot_1d(x_enc, y, x_ticks, display_name, stat_label,
                      f"Grid Search Performance ({stat_label})", filepath)
 
+            if has_std:
+                std_arr = np.array([std_map.get(pv, 0.0) for pv, _ in stat_results], dtype=float)
+                filepath_std = f"{exp_path}/plot_{display_name}{suffix}_with_std.png"
+                _plot_1d(x_enc, y, x_ticks, display_name, stat_label,
+                         f"Grid Search Performance ({stat_label})", filepath_std, std=std_arr)
+
         elif num_params == 2:
             _plot_2d_heatmap(param_names, stat_results, exp_path, stat_label, suffix)
             _plot_2d_lines(param_names, stat_results, exp_path, stat_label, suffix)
+
+            if has_std:
+                _plot_2d_heatmap(param_names, stat_results, exp_path, stat_label,
+                                suffix + "_with_std", std_map=std_map)
+                _plot_2d_lines(param_names, stat_results, exp_path, stat_label,
+                               suffix + "_with_std", std_map=std_map)
 
         elif num_params == 3:
             _plot_3d_scatter(param_names, stat_results, exp_path, stat_label, suffix)

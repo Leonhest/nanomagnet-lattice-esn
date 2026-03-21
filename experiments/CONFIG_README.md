@@ -23,7 +23,7 @@ esn:
 - `optimization.hyperneat.substrate_shape`
 - `optimization.hyperneat.substrate_coords`
 
-**Directory expansion**: if `W_res_args.type` is a directory path, it is auto-expanded into a list of all `.json` files in that directory, becoming a grid-search dimension.
+**Directory expansion**: if `W_res_args.type` is a directory path, it is auto-expanded into a list of all `.json` files in that directory, becoming a grid-search dimension. When `tile_replicas: true`, the files are instead treated as replicas to average (see `W_res_args.tile_replicas`).
 
 ---
 
@@ -114,6 +114,7 @@ All parameters are shared between `"tanh"` and `"hysteresis"` names (they use th
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `type` | string | *required* | Reservoir matrix construction method. See **Reservoir Types** below. |
+| `tile_replicas` | bool | `false` | When `type` is a directory path, treat all `.json` files within as replicas of the same configuration (averaged together) instead of separate grid-search dimensions. When pointing to a parent directory containing subdirectories, each subdirectory becomes a grid-search point and files within each are replicas. Use with tiles produced by `optimize.py` with `optimization.num_runs > 1`. |
 | `neighborhood` | int or string | `"Von_Neumann"` | Number of Euclidean distance shells to include as neighbors. Each shell adds all grid cells at the next unique distance: `1` = 4 neighbors (distance 1, Von Neumann), `2` = 8 (+ distance √2 diagonals, Moore), `3` = 12 (+ distance 2), `4` = 20 (+ distance √5 knight's moves), etc. Also accepts legacy strings `"Von_Neumann"` (= `1`) and `"Moore"` (= `2`). Only used by lattice-based types. |
 | `self_connection` | float | *required* | Weight of self-loops added to every node. `0.0` = no self-connections. |
 | `sign_frac` | float | *required* | Fraction of edges whose weight is negated. `0.0` = all positive, `0.5` = half negative, `1.0` = all negative. |
@@ -173,6 +174,7 @@ Used by the optimizer scripts (`optimizer/cmaes.py`, `optimizer/hyperneat.py`) t
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `method` | string | *required* | Optimization method: `"cmaes"` or `"hyperneat"`. |
+| `num_runs` | int | `1` | Number of optimization runs per grid-search combination. Each run uses a different seed (`seed + run_index`). When > 1, tiles are saved to a subdirectory (`best_tiles_*/run_0.json`, `run_1.json`, ...). |
 | `num_evals` | int | `1` | Number of ESN evaluations per candidate tile (results are averaged). Higher = more robust but slower. |
 | `seed` | int | `42` | Random seed for the optimizer. |
 
@@ -214,7 +216,7 @@ All outputs are written to the experiment folder:
 - **NRMSE mode** (`res_metrics: false`): `reservoir_stats_summary.json` with per-combination statistics, plus parameter sweep plots (PNG for 1D/2D, interactive HTML for 3D).
 - **Metrics mode** (`res_metrics: true`): kernel quality, generalization rank, and memory capacity plots.
 - **State plots** (`state_plot: true`): `state_plot.png` showing reservoir node activations over time.
-- **Optimization**: `best_tile_*.json` files containing the optimized tile graph.
+- **Optimization**: `best_tile_*.json` files containing the optimized tile graph. With `optimization.num_runs > 1`, tiles are saved in subdirectories (`best_tiles_*/run_0.json`, ...).
 
 ## Filtering
 
