@@ -1,10 +1,9 @@
 import logging
 
 import cma
-import networkx as nx
 import numpy as np
 
-from matrix import Matrix, save_tile
+from matrix import Matrix, OffsetTile, save_tile, _resolve_neighborhood_offsets
 from optimizer.fitness import evaluate_tile
 
 logger = logging.getLogger(__name__)
@@ -13,8 +12,8 @@ logger = logging.getLogger(__name__)
 def run_cmaes(config, dataset, output_dir):
     """Run CMA-ES optimization to find optimal tile weights.
 
-    The tile topology is fixed (from config). CMA-ES optimizes one weight
-    per directed edge.
+    Optimizes one weight per (tile_position, offset) pair, which avoids
+    aliasing on small tiles where multiple offsets map to the same (src, dst).
 
     Args:
         config: full experiment config dict.
@@ -22,7 +21,7 @@ def run_cmaes(config, dataset, output_dir):
         output_dir: directory to write results.
 
     Returns:
-        tuple: (best_tile_G, best_nrmse)
+        tuple: (best_tile, best_nrmse) where best_tile is an OffsetTile.
     """
     opt_conf = config["optimization"]
     cmaes_conf = opt_conf["cmaes"]
@@ -32,84 +31,84 @@ def run_cmaes(config, dataset, output_dir):
 
     tile_conf = W_args["W_res_args"]["tile"]
     tile_rows, tile_cols = tile_conf["shape"]
+    tile_shape = (tile_rows, tile_cols)
     neighborhood = W_args["W_res_args"].get("neighborhood", "Von_Neumann")
 
-    # Build the fixed tile topology
-    dummy_matrix = Matrix.__new__(Matrix)
-    dummy_matrix.W_res_args = W_args["W_res_args"]
-    tile_topo = dummy_matrix.tetragonal(
-        [tile_rows, tile_cols], periodic=True, neighborhood=neighborhood
-    )
-
-    # Check whether CMA-ES should also optimize signs, directions, self-connections
     optimize_signs = cmaes_conf.get("optimize_signs", False)
     optimize_directions = cmaes_conf.get("optimize_directions", False)
     optimize_self_connections = cmaes_conf.get("optimize_self_connections", False)
 
     rng = np.random.RandomState(opt_conf.get("seed", 42))
-    tile_topo = tile_topo.to_directed()
 
-    if not optimize_directions:
-        # Apply directed_edges stochastically using the optimization seed
-        dir_frac = W_args["W_res_args"]["directed_edges_fraction"]
-        dir_weights = W_args["W_res_args"]["directed_edges_weights"]
-        undirected_edges = list(dummy_matrix.tetragonal(
-            [tile_rows, tile_cols], periodic=True, neighborhood=neighborhood
-        ).edges())
-        for u, v in undirected_edges:
-            if rng.random() < dir_frac:
-                del_u, del_v = (u, v) if rng.random() < 0.5 else (v, u)
-                if tile_topo.has_edge(del_u, del_v):
-                    if dir_weights == 0.0:
-                        tile_topo.remove_edge(del_u, del_v)
-                    else:
-                        tile_topo.edges[del_u, del_v]["_dir_scaled"] = True
+    # Build parameter list: one entry per (tile_position, offset)
+    offsets = _resolve_neighborhood_offsets(neighborhood)
+    tile_nodes = [(r, c) for r in range(tile_rows) for c in range(tile_cols)]
 
-    # Add self-loops to tile topology so they become CMA-ES parameters
+    param_list = []  # [(tile_pos, (dr, dc)), ...]
+    for pos in tile_nodes:
+        for offset in offsets:
+            param_list.append((pos, offset))
+
     if optimize_self_connections:
-        for node in tile_topo.nodes():
-            tile_topo.add_edge(node, node)
+        for pos in tile_nodes:
+            param_list.append((pos, (0, 0)))
 
-    # Catalog remaining edges as the parameter vector
-    edge_list = list(tile_topo.edges())
-    num_params = len(edge_list)
-    logger.info(f"CMA-ES: {num_params} parameters (edges in tile)")
+    num_params = len(param_list)
+    logger.info(f"CMA-ES: {num_params} parameters ({len(tile_nodes)} positions × {len(offsets)} offsets"
+                f"{' + self-connections' if optimize_self_connections else ''})")
 
+    # Pre-compute sign pattern per (pos, offset)
     if not optimize_signs:
-        # Pre-compute sign pattern using seed so same params give same reservoir
-        # Self-loops are excluded from sign randomization
         sign_frac = W_args["W_res_args"]["sign_frac"]
         edge_signs = np.array([
-            1 if u == v else (-1 if rng.random() < sign_frac else 1)
-            for u, v in edge_list
+            1 if offset == (0, 0) else (-1 if rng.random() < sign_frac else 1)
+            for _, offset in param_list
         ])
     else:
         edge_signs = np.ones(num_params)
 
+    # Pre-compute direction scaling per (pos, offset)
     if not optimize_directions:
-        # Pre-compute dir scale for edges selected for direction weakening
-        dir_weights = W_args["W_res_args"]["directed_edges_weights"]
-        edge_dir_scales = np.array([
-            dir_weights if tile_topo.edges[u, v].get("_dir_scaled", False) else 1.0
-            for u, v in edge_list
-        ])
+        dir_frac = W_args["W_res_args"]["directed_edges_fraction"]
+        dir_weight_scale = W_args["W_res_args"]["directed_edges_weights"]
+        edge_dir_scales = np.ones(num_params)
+        processed = set()
+        for i, (pos, (dr, dc)) in enumerate(param_list):
+            if (dr, dc) == (0, 0):
+                continue
+            # Find the reverse: the param at the offset-destination going back
+            reverse_pos = ((pos[0] + dr) % tile_rows, (pos[1] + dc) % tile_cols)
+            reverse_offset = (-dr, -dc)
+            pair_key = tuple(sorted([(pos, (dr, dc)), (reverse_pos, reverse_offset)]))
+            if pair_key in processed:
+                continue
+            processed.add(pair_key)
+            if rng.random() < dir_frac:
+                # Find the reverse param index
+                try:
+                    j = param_list.index((reverse_pos, reverse_offset))
+                except ValueError:
+                    continue
+                # Randomly pick which direction to scale
+                if rng.random() < 0.5:
+                    edge_dir_scales[i] = dir_weight_scale
+                else:
+                    edge_dir_scales[j] = dir_weight_scale
     else:
         edge_dir_scales = np.ones(num_params)
 
     def params_to_tile(params):
-        """Convert a parameter vector to a tile DiGraph."""
-        tile_G = nx.DiGraph()
-        for node in tile_topo.nodes():
-            tile_G.add_node(node)
-        for i, (u, v) in enumerate(edge_list):
+        """Convert a parameter vector to an OffsetTile."""
+        offset_weights = {}
+        for i, (pos, offset) in enumerate(param_list):
             weight = params[i] * edge_signs[i] * edge_dir_scales[i]
-            tile_G.add_edge(u, v, weight=float(weight))
-        return tile_G
+            offset_weights[(pos, offset)] = float(weight)
+        return OffsetTile(tile_shape, offset_weights, neighborhood)
 
     def fitness(params):
-        tile_G = params_to_tile(params)
+        tile = params_to_tile(params)
         return evaluate_tile(
-            tile_G, W_args, esn_conf, dataset, num_evals,
+            tile, W_args, esn_conf, dataset, num_evals,
             skip_self_connection=optimize_self_connections,
         )
 

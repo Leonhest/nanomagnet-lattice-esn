@@ -15,10 +15,10 @@ logger = logging.getLogger(__name__)
 
 def evaluate_tile(tile_G, W_args, esn_conf, dataset, num_evals=1,
                   skip_self_connection=False):
-    """Evaluate a tile graph by building an ESN and measuring NRMSE.
+    """Evaluate a tile by building an ESN and measuring NRMSE.
 
     Args:
-        tile_G: nx.DiGraph with 'weight' attributes on edges.
+        tile_G: nx.DiGraph or OffsetTile with weight data.
         W_args: dict with size, W_in_args, W_res_args (same as config esn.W_args).
         esn_conf: dict with spectral_radius, f (args), washout, readout (args).
         dataset: object with u_train, y_train, u_test, y_test tensors.

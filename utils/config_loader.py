@@ -84,6 +84,7 @@ class ConfigLoader():
                     for _ in range(num_runs):
                         cfg = copy.deepcopy(config)
                         cfg["esn"]["W_args"]["W_res_args"]["type"] = tile_path
+                        cfg["esn"]["W_args"]["W_res_args"]["_replica_group"] = type_val
                         cfg["esn"]["W_args"]["W_res_args"].pop("_tile_replica_files", None)
                         cfg["esn"]["W_args"]["W_res_args"].pop("tile_replicas", None)
                         ConfigLoader._resolve_from_tile_params(cfg)
@@ -117,7 +118,7 @@ class ConfigLoader():
     }
 
     # Keys that should be skipped entirely during list parameter discovery
-    _grid_search_skip_keys = {"_tile_replica_files"}
+    _grid_search_skip_keys = {"_tile_replica_files", "_replica_group"}
 
     @staticmethod
     def _expand_folder_paths(config):
@@ -240,8 +241,13 @@ class ConfigLoader():
                 continue
             current_path = f"{prefix}.{key}" if prefix else key
 
-            if isinstance(value, list) and current_path not in ConfigLoader._grid_search_exclude:
-                result[current_path] = value
+            if isinstance(value, list):
+                if current_path in ConfigLoader._grid_search_exclude:
+                    # Nested list (e.g. shape: [[2,2], [3,3]]) → treat as sweep
+                    if value and all(isinstance(v, list) for v in value):
+                        result[current_path] = value
+                else:
+                    result[current_path] = value
             elif isinstance(value, dict):
                 ConfigLoader._find_list_parameters(value, current_path, result)
 

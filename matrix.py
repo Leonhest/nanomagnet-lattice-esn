@@ -5,6 +5,26 @@ from math import sqrt
 import numpy as np
 
 
+class OffsetTile:
+    """Tile with per-(position, offset) weights.
+
+    Avoids aliasing that occurs with nx.DiGraph on small periodic tiles
+    where multiple offsets map to the same (src, dst) node pair.
+    """
+
+    def __init__(self, tile_shape, offset_weights, neighborhood=None):
+        self.tile_shape = tile_shape          # (rows, cols)
+        self.offset_weights = offset_weights  # {((r,c), (dr,dc)): float}
+        self.neighborhood = neighborhood
+
+    def number_of_edges(self):
+        return len(self.offset_weights)
+
+    def nodes(self):
+        return [(r, c) for r in range(self.tile_shape[0])
+                       for c in range(self.tile_shape[1])]
+
+
 def euclidean(x, y):
     """
     The euclidean distance metric that is used within NetworkX.
@@ -53,17 +73,31 @@ def orthogonalize_tile(tile_G, method="exact", iterations=50):
 
 
 def save_tile(tile_G, path, metadata=None):
-    """Save a tile graph as JSON (edge list + metadata)."""
-    nodes = list(tile_G.nodes())
-    tile_shape = [max(n[0] for n in nodes) + 1, max(n[1] for n in nodes) + 1]
-    data = {
-        "nodes": nodes,
-        "edges": [
-            {"src": _node_to_json(u), "dst": _node_to_json(v), "weight": d["weight"]}
-            for u, v, d in tile_G.edges(data=True)
-        ],
-    }
-    meta = {"tile_shape": tile_shape}
+    """Save a tile graph or OffsetTile as JSON."""
+    if isinstance(tile_G, OffsetTile):
+        nodes = tile_G.nodes()
+        data = {
+            "format": "offset",
+            "nodes": [list(n) for n in nodes],
+            "edges": [
+                {"src": list(pos), "offset": list(offset), "weight": weight}
+                for (pos, offset), weight in tile_G.offset_weights.items()
+            ],
+        }
+        meta = {"tile_shape": list(tile_G.tile_shape)}
+        if tile_G.neighborhood is not None:
+            meta["neighborhood"] = tile_G.neighborhood
+    else:
+        nodes = list(tile_G.nodes())
+        tile_shape = [max(n[0] for n in nodes) + 1, max(n[1] for n in nodes) + 1]
+        data = {
+            "nodes": nodes,
+            "edges": [
+                {"src": _node_to_json(u), "dst": _node_to_json(v), "weight": d["weight"]}
+                for u, v, d in tile_G.edges(data=True)
+            ],
+        }
+        meta = {"tile_shape": tile_shape}
     if metadata:
         meta.update(metadata)
     data["metadata"] = meta
@@ -78,9 +112,22 @@ def load_tile(path):
 
 
 def load_tile_with_metadata(path):
-    """Load a tile graph and its metadata from JSON."""
+    """Load a tile graph (or OffsetTile) and its metadata from JSON."""
     with open(path, "r") as f:
         data = json.load(f)
+
+    meta = data.get("metadata", {})
+
+    if data.get("format") == "offset":
+        tile_shape = tuple(meta["tile_shape"])
+        offset_weights = {}
+        for edge in data["edges"]:
+            pos = tuple(edge["src"])
+            offset = tuple(edge["offset"])
+            offset_weights[(pos, offset)] = edge["weight"]
+        tile = OffsetTile(tile_shape, offset_weights,
+                          neighborhood=meta.get("neighborhood"))
+        return tile, meta
 
     tile_G = nx.DiGraph()
     for node in data["nodes"]:
@@ -91,11 +138,55 @@ def load_tile_with_metadata(path):
             _node_from_json(edge["dst"]),
             weight=edge["weight"],
         )
-    return tile_G, data.get("metadata", {})
+    return tile_G, meta
 
 
-def _tile_edges_to_lattice(tile_G, tile_rows, tile_cols, m, n):
-    """Replicate tile edges across a lattice grid with periodic wrapping."""
+def _resolve_neighborhood_offsets(neighborhood):
+    """Resolve a neighborhood specifier to a list of (di, dj) offsets."""
+    if neighborhood == "Von_Neumann":
+        return Matrix._shell_offsets(1)
+    elif neighborhood == "Moore":
+        return Matrix._shell_offsets(2)
+    elif isinstance(neighborhood, int) and neighborhood >= 1:
+        return Matrix._shell_offsets(neighborhood)
+    else:
+        raise ValueError(f"Unknown neighborhood: {neighborhood}")
+
+
+def _tile_edges_to_lattice(tile_G, tile_rows, tile_cols, m, n, neighborhood=2):
+    """Replicate tile weights across a lattice grid using modulo position mapping.
+
+    For each lattice edge (determined by neighborhood offsets), the weight is
+    looked up from the tile by mapping source and target positions via modulo.
+    This correctly handles tiles smaller than the neighborhood radius.
+    """
+    tile_weights = {}
+    for u, v, d in tile_G.edges(data=True):
+        tile_weights[(u, v)] = d.get('weight', 1.0)
+
+    offsets = _resolve_neighborhood_offsets(neighborhood)
+
+    G = nx.DiGraph()
+    for r in range(m):
+        for c in range(n):
+            G.add_node((r, c))
+
+    for r in range(m):
+        for c in range(n):
+            t_u = (r % tile_rows, c % tile_cols)
+            for dr, dc in offsets:
+                tr, tc = r + dr, c + dc
+                if 0 <= tr < m and 0 <= tc < n:
+                    t_v = (tr % tile_rows, tc % tile_cols)
+                    if (t_u, t_v) in tile_weights:
+                        G.add_edge((r, c), (tr, tc), weight=tile_weights[(t_u, t_v)])
+
+    return G
+
+
+def _tile_edges_to_lattice_by_offset(tile_G, tile_rows, tile_cols, m, n):
+    """Replicate tile edges by offset. Used for dense/orthogonalized tiles
+    where edges may not correspond to standard neighborhood offsets."""
     G = nx.DiGraph()
     for r in range(m):
         for c in range(n):
@@ -119,15 +210,36 @@ def _tile_edges_to_lattice(tile_G, tile_rows, tile_cols, m, n):
     return G
 
 
-def tile_to_lattice(tile_G, tile_shape, lattice_size=36):
-    """Tile a directed tile graph onto a full lattice.
+def _tile_offsets_to_lattice(offset_weights, tile_rows, tile_cols, m, n):
+    """Tile an OffsetTile onto a full lattice using per-(position, offset) weights."""
+    # Group by tile position for efficient lookup
+    pos_offsets = {}
+    for (pos, offset), weight in offset_weights.items():
+        pos_offsets.setdefault(pos, []).append((offset, weight))
+
+    G = nx.DiGraph()
+    for r in range(m):
+        for c in range(n):
+            G.add_node((r, c))
+            t_pos = (r % tile_rows, c % tile_cols)
+            for (dr, dc), weight in pos_offsets.get(t_pos, []):
+                tr, tc = r + dr, c + dc
+                if 0 <= tr < m and 0 <= tc < n:
+                    G.add_edge((r, c), (tr, tc), weight=weight)
+    return G
+
+
+def tile_to_lattice(tile_G, tile_shape, lattice_size=36, neighborhood=2):
+    """Tile a directed tile graph or OffsetTile onto a full lattice.
 
     Standalone version of Matrix._tile_from_graph for use outside the class.
     """
     tile_rows, tile_cols = tile_shape
     m = int(sqrt(lattice_size))
     n = int(sqrt(lattice_size))
-    return _tile_edges_to_lattice(tile_G, tile_rows, tile_cols, m, n)
+    if isinstance(tile_G, OffsetTile):
+        return _tile_offsets_to_lattice(tile_G.offset_weights, tile_rows, tile_cols, m, n)
+    return _tile_edges_to_lattice(tile_G, tile_rows, tile_cols, m, n, neighborhood)
 
 
 def _is_tile_path(value):
@@ -217,14 +329,18 @@ class Matrix:
                     W_res_np = alternating_projections(W_res_np.astype(np.float32), alt_proj_iters)
                 return torch.FloatTensor(W_res_np)
             elif _is_tile_path(wd):
-                tile_G, tile_meta = load_tile_with_metadata(wd)
+                tile_data, tile_meta = load_tile_with_metadata(wd)
                 tile_rows, tile_cols = tile_meta["tile_shape"]
-                orth_tile = self.W_res_args.get("orthogonal_tile", False)
-                if orth_tile:
-                    orth_iters = self.W_res_args.get("orthogonal_tile_iters", 50)
-                    tile_G = orthogonalize_tile(tile_G, method=orth_tile, iterations=orth_iters)
-                self.G_res = self._tile_from_graph(tile_G, m, n, tile_rows, tile_cols)
                 skip_self = tile_meta.get("optimize_self_connections", False)
+                if isinstance(tile_data, OffsetTile):
+                    self.G_res = _tile_offsets_to_lattice(
+                        tile_data.offset_weights, tile_rows, tile_cols, m, n)
+                else:
+                    orth_tile = self.W_res_args.get("orthogonal_tile", False)
+                    if orth_tile:
+                        orth_iters = self.W_res_args.get("orthogonal_tile_iters", 50)
+                        tile_data = orthogonalize_tile(tile_data, method=orth_tile, iterations=orth_iters)
+                    self.G_res = self._tile_from_graph(tile_data, m, n, tile_rows, tile_cols)
             elif wd == "tile":
                 self.G_res = self.tiled_rectangular(m, n)
             else:
@@ -268,9 +384,9 @@ class Matrix:
             tile_G = orthogonalize_tile(tile_G, method=orth_tile, iterations=orth_iters)
 
         # "exact" orthogonalization makes the tile dense with new edges,
-        # so use edge-based tiling to preserve them
+        # so use offset-based tiling to preserve them
         if orth_tile == "exact":
-            return _tile_edges_to_lattice(tile_G, tile_rows, tile_cols, m, n)
+            return _tile_edges_to_lattice_by_offset(tile_G, tile_rows, tile_cols, m, n)
 
         # Build directed tile weight lookup
         tile_weights = {}
@@ -295,11 +411,12 @@ class Matrix:
 
     def _tile_from_graph(self, tile_G, m, n, tile_rows, tile_cols):
         """Tile a pre-built directed tile graph onto the full lattice."""
-        return _tile_edges_to_lattice(tile_G, tile_rows, tile_cols, m, n)
+        neighborhood = self.W_res_args.get("neighborhood", 2)
+        return _tile_edges_to_lattice(tile_G, tile_rows, tile_cols, m, n, neighborhood)
 
     @classmethod
     def from_tile(cls, tile_G, W_args, skip_self_connection=False):
-        """Build a Matrix from a pre-built tile nx.DiGraph with weight attributes.
+        """Build a Matrix from a tile (nx.DiGraph or OffsetTile).
 
         Bypasses the normal __init__ to directly tile the given graph onto the
         full reservoir lattice. sign_frac/directed_edges are skipped since the
@@ -315,17 +432,24 @@ class Matrix:
 
         m = int(sqrt(obj.size))
         n = int(sqrt(obj.size))
-        nodes = list(tile_G.nodes())
-        tile_rows = max(nd[0] for nd in nodes) + 1
-        tile_cols = max(nd[1] for nd in nodes) + 1
 
-        # Tile orthogonalization (before tiling)
-        orth_tile = obj.W_res_args.get("orthogonal_tile", False)
-        if orth_tile:
-            orth_iters = obj.W_res_args.get("orthogonal_tile_iters", 50)
-            tile_G = orthogonalize_tile(tile_G, method=orth_tile, iterations=orth_iters)
+        if isinstance(tile_G, OffsetTile):
+            tile_rows, tile_cols = tile_G.tile_shape
+            obj.G_res = _tile_offsets_to_lattice(
+                tile_G.offset_weights, tile_rows, tile_cols, m, n)
+        else:
+            nodes = list(tile_G.nodes())
+            tile_rows = max(nd[0] for nd in nodes) + 1
+            tile_cols = max(nd[1] for nd in nodes) + 1
 
-        obj.G_res = obj._tile_from_graph(tile_G, m, n, tile_rows, tile_cols)
+            # Tile orthogonalization (before tiling)
+            orth_tile = obj.W_res_args.get("orthogonal_tile", False)
+            if orth_tile:
+                orth_iters = obj.W_res_args.get("orthogonal_tile_iters", 50)
+                tile_G = orthogonalize_tile(tile_G, method=orth_tile, iterations=orth_iters)
+
+            obj.G_res = obj._tile_from_graph(tile_G, m, n, tile_rows, tile_cols)
+
         if not skip_self_connection:
             obj._self_connection(obj.G_res)
         W_res = nx.to_numpy_array(obj.G_res)
