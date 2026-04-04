@@ -26,14 +26,14 @@ data:
 
 # --- ESN ----------------------------------------------------------------------
 esn:
-  spectral_radius: 0.95         # Target spectral radius (null = no rescaling)
+  spectral_radius: [0.8, 0.9, 0.95, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]            # Target spectral radius (null = no rescaling)
   washout: 200                  # Number of initial timesteps discarded
   training_noise: 0             # Uniform noise amplitude added during training (0 = off)
   input_bias: null              # Fixed input signal replacing u[t] (null = use actual input)
 
   # Activation function
   f:
-    name: hysteresis                 # "tanh" or "hysteresis" (both use the Hysteresis class)
+    name: tanh                 # "tanh" or "hysteresis" (both use the Hysteresis class)
     args:
       beta: 1.0                 # Steepness of tanh
       shift: 0.15                # Horizontal shift: tanh(beta * x - shift)
@@ -63,7 +63,7 @@ esn:
                                 #   or path to a .json tile/matrix file,
                                 #   or path to a directory of .json files (auto-expanded to list)
       tile_replicas: false      # true = treat directory contents as replicas to average (not grid search)
-      neighborhood: 2            # Number of distance shells: 1 = 4 neighbors (Von Neumann), 2 = 8 (Moore),
+      neighborhood: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]            # Number of distance shells: 1 = 4 neighbors (Von Neumann), 2 = 8 (Moore),
                                 #   3 = 12, 4 = 20, ... Also accepts "Von_Neumann" (=1) or "Moore" (=2)
       self_connection: 0.0      # Self-loop weight on every node (or "from_tile" to resolve from tile JSON metadata)
       sign_frac: 0.5            # Fraction of edges made negative (or "from_tile")
@@ -87,7 +87,7 @@ esn:
 # --- Optimization (for tile search — only used by optimizer scripts) ----------
 optimization:
   method: cmaes                 # "cmaes" or "hyperneat"
-  num_runs: 10                   # Optimization runs per config (each with seed + run_index)
+  num_runs: 1                   # Optimization runs per config (each with seed + run_index)
   num_evals: 3                  # ESN evaluations per candidate (averaged)
   seed: 42                      # Random seed for optimizer
 

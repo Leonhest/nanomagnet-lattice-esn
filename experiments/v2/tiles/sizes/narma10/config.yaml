@@ -50,7 +50,7 @@ esn:
 
   # Weight matrices
   W_args:
-    size: 400                   # Reservoir size (must be a perfect square for lattice types)
+    size: 400                  # Reservoir size (must be a perfect square for lattice types)
 
     # Input weights
     W_in_args:
@@ -62,7 +62,7 @@ esn:
       type: constant            # "constant", "random", "tile", "baseline-esn", "orthogonal",
                                 #   or path to a .json tile/matrix file,
                                 #   or path to a directory of .json files (auto-expanded to list)
-      tile_replicas: false      # true = treat directory contents as replicas to average (not grid search)
+      tile_replicas: true      # true = treat directory contents as replicas to average (not grid search)
       neighborhood: 2            # Number of distance shells: 1 = 4 neighbors (Von Neumann), 2 = 8 (Moore),
                                 #   3 = 12, 4 = 20, ... Also accepts "Von_Neumann" (=1) or "Moore" (=2)
       self_connection: 0.0      # Self-loop weight on every node (or "from_tile" to resolve from tile JSON metadata)
@@ -72,7 +72,7 @@ esn:
 
       # Tile configuration (used when type: tile)
       tile:
-        shape: [3, 3]           # Tile dimensions [rows, cols] — NOT a grid-search dimension
+        shape: [[1, 1], [2, 2], [3, 3], [5, 5], [10, 10], [20, 20]]           # Tile dimensions [rows, cols] — NOT a grid-search dimension
         method: random           # "random" = random tile weights
 
       # Orthogonal reservoir options

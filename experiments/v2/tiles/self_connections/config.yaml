@@ -4,7 +4,7 @@
 # Any field that is a YAML list becomes a grid-search dimension automatically.
 # ============================================================================
 
-num_runs: 10                    # Repetitions per grid-search combination (fresh random seed each)
+num_runs: 10                   # Repetitions per grid-search combination (fresh random seed each)
 res_metrics: false              # true = reservoir metrics mode (KQ, gen, MC); false = NRMSE mode
 state_plot: false               # true = save reservoir node activation plots
 plot_deciles: false             # true = plot decile bands in results
@@ -59,13 +59,13 @@ esn:
 
     # Reservoir weights
     W_res_args:
-      type: constant            # "constant", "random", "tile", "baseline-esn", "orthogonal",
+      type: experiments/v2/tiles/self_connections/           # "constant", "random", "tile", "baseline-esn", "orthogonal",
                                 #   or path to a .json tile/matrix file,
                                 #   or path to a directory of .json files (auto-expanded to list)
-      tile_replicas: false      # true = treat directory contents as replicas to average (not grid search)
+      tile_replicas: true      # true = treat directory contents as replicas to average (not grid search)
       neighborhood: 2            # Number of distance shells: 1 = 4 neighbors (Von Neumann), 2 = 8 (Moore),
                                 #   3 = 12, 4 = 20, ... Also accepts "Von_Neumann" (=1) or "Moore" (=2)
-      self_connection: 0.0      # Self-loop weight on every node (or "from_tile" to resolve from tile JSON metadata)
+      self_connection: [0.0, 0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 1.0, 5.0]      # Self-loop weight on every node (or "from_tile" to resolve from tile JSON metadata)
       sign_frac: 0.5            # Fraction of edges made negative (or "from_tile")
       directed_edges_fraction: 0.9  # Fraction of edge pairs made unidirectional (or "from_tile")
       directed_edges_weights: 0.0   # Weight multiplier for the removed direction (0 = fully remove) (or "from_tile")
