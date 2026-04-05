@@ -23,6 +23,8 @@ esn:
 - `optimization.hyperneat.substrate_shape`
 - `optimization.hyperneat.substrate_coords`
 
+**Nested list override**: excluded keys can still be swept by using a nested list. For example, `shape: [3, 3]` is treated as a single shape, but `shape: [[1, 1], [2, 2], [3, 3]]` is treated as a sweep over three shapes.
+
 **Directory expansion**: if `W_res_args.type` is a directory path, it is auto-expanded into a list of all `.json` files in that directory, becoming a grid-search dimension. When `tile_replicas: true`, the files are instead treated as replicas to average (see `W_res_args.tile_replicas`).
 
 ---
@@ -138,7 +140,7 @@ All parameters are shared between `"tanh"` and `"hysteresis"` names (they use th
 
 ##### `"from_tile"` Value Resolution
 
-When `type` is a path to a `.json` tile file, any `W_res_args` field can be set to the string `"from_tile"` instead of a numeric value. Before the run starts, `ConfigLoader` reads the tile JSON's `metadata.params` dictionary and replaces each `"from_tile"` field with the corresponding value stored under the key `esn.W_args.W_res_args.<field>`. This lets optimized tiles carry their own parameter values (e.g., `self_connection`, `sign_frac`) so experiments automatically use the settings the tile was optimized with.
+When `type` is a path to a `.json` tile file, any field under `W_res_args` (including nested fields) can be set to the string `"from_tile"` instead of a numeric value. Before the run starts, `ConfigLoader` reads the tile JSON's `metadata.params` dictionary and replaces each `"from_tile"` field with the corresponding value stored under its dotted path (e.g., `esn.W_args.W_res_args.self_connection` or `esn.W_args.W_res_args.tile.shape`). This lets optimized tiles carry their own parameter values so experiments automatically use the settings the tile was optimized with.
 
 ```yaml
 W_res_args:
@@ -146,7 +148,11 @@ W_res_args:
   self_connection: from_tile    # resolved from tile JSON metadata
   sign_frac: from_tile          # resolved from tile JSON metadata
   directed_edges_fraction: 0.9  # kept as-is
+  tile:
+    shape: from_tile            # nested fields work too
 ```
+
+When `type` is not a `.json` path (e.g., `"constant"`, `"baseline-esn"`), `"from_tile"` values are left as-is and ignored — those code paths don't read the tile-specific fields. This means `"from_tile"` is safe to use in configs that also sweep non-tile types.
 
 #### `esn.W_args.W_res_args.tile` — Tile Configuration
 

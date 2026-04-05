@@ -169,11 +169,23 @@ class ConfigLoader():
                 expanded = []
                 for v in type_val:
                     if isinstance(v, str) and os.path.isdir(v):
-                        jsons = _list_jsons(v)
-                        if not jsons:
-                            raise ValueError(f"No .json tile files found in directory: {v}")
-                        replica_files[v] = jsons
-                        expanded.append(v)
+                        # Check for subdirectories with .json files
+                        subdirs = sorted(
+                            os.path.join(v, d) for d in os.listdir(v)
+                            if os.path.isdir(os.path.join(v, d))
+                        )
+                        subdirs_with_jsons = [d for d in subdirs if _list_jsons(d)]
+
+                        if subdirs_with_jsons:
+                            for subdir in subdirs_with_jsons:
+                                replica_files[subdir] = _list_jsons(subdir)
+                            expanded.extend(subdirs_with_jsons)
+                        else:
+                            jsons = _list_jsons(v)
+                            if not jsons:
+                                raise ValueError(f"No .json tile files found in directory: {v}")
+                            replica_files[v] = jsons
+                            expanded.append(v)
                     else:
                         expanded.append(v)
                 W_res_args["type"] = expanded
@@ -217,19 +229,29 @@ class ConfigLoader():
         if not isinstance(tile_path, str) or not tile_path.endswith(".json"):
             return
 
-        # Find all W_res_args values set to "from_tile"
-        from_tile_keys = [k for k, v in W_res_args.items() if v == "from_tile"]
-        if not from_tile_keys:
+        # Find all values set to "from_tile" (including nested dicts)
+        from_tile_paths = []
+        ConfigLoader._find_from_tile(W_res_args, "esn.W_args.W_res_args", from_tile_paths)
+        if not from_tile_paths:
             return
 
         with open(tile_path, "r") as f:
             tile_data = json.load(f)
         params = tile_data.get("metadata", {}).get("params", {})
 
-        for key in from_tile_keys:
-            param_path = f"esn.W_args.W_res_args.{key}"
+        for param_path in from_tile_paths:
             if param_path in params:
-                W_res_args[key] = params[param_path]
+                ConfigLoader._set_nested_value(config, param_path, params[param_path])
+
+    @staticmethod
+    def _find_from_tile(d, prefix, result):
+        """Recursively find all 'from_tile' values and collect their dotted paths."""
+        for key, value in d.items():
+            path = f"{prefix}.{key}"
+            if value == "from_tile":
+                result.append(path)
+            elif isinstance(value, dict):
+                ConfigLoader._find_from_tile(value, path, result)
 
     @staticmethod
     def _find_list_parameters(config, prefix="", result=None):

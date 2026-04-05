@@ -11,9 +11,15 @@ def _display_label(val):
     if isinstance(val, str) and '/' in val:
         # Strip trailing slash for directories, then take basename
         name = os.path.basename(os.path.normpath(val))
-        name = os.path.splitext(name)[0]
-        if name.startswith("best_"):
-            name = name[len("best_"):]
+        # Only strip real file extensions (e.g. .json), not decimals like .0
+        ext = os.path.splitext(name)[1]
+        if ext and ext[1:].isalpha():
+            name = os.path.splitext(name)[0]
+        # Strip "best_tiles_" or "best_tile_" prefix
+        for prefix in ("best_tiles_", "best_tile_", "best_"):
+            if name.startswith(prefix):
+                name = name[len(prefix):]
+                break
         return name
     return val
 
@@ -47,7 +53,12 @@ def _encode_column(values):
         encoded = np.array(values, dtype=float)
         return encoded, None
     except (ValueError, TypeError):
-        unique_vals = sorted(set(values), key=lambda v: str(v))
+        import re
+        def _natural_sort_key(v):
+            """Sort strings with embedded numbers in natural order."""
+            return [int(c) if c.isdigit() else c.lower()
+                    for c in re.split(r'(\d+)', str(v))]
+        unique_vals = sorted(set(values), key=_natural_sort_key)
         val_to_idx = {val: i for i, val in enumerate(unique_vals)}
         encoded = np.array([val_to_idx[v] for v in values], dtype=float)
         tick_labels = [_display_label(v) for v in unique_vals]
