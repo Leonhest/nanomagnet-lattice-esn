@@ -7,6 +7,7 @@ from itertools import product
 import yaml
 
 from data.NARMA10 import NARMA10
+from data.mackey_glass import MackeyGlass
 from matrix import save_tile
 from utils.config_loader import ConfigLoader
 
@@ -119,7 +120,11 @@ def main(exp_path):
     logger.info(f"Grid search: {len(configs)} config(s), {opt_num_runs} optimization run(s) each")
 
     logger.info("Loading dataset...")
-    dataset = NARMA10(base_config["data"])
+    data_name = base_config["data"]["name"]
+    if data_name == "Mackey-Glass":
+        dataset = MackeyGlass(base_config["data"])
+    else:
+        dataset = NARMA10(base_config["data"])
 
     os.makedirs(exp_path, exist_ok=True)
 

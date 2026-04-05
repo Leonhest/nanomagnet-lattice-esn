@@ -27,7 +27,7 @@ data:
 # --- ESN ----------------------------------------------------------------------
 esn:
   spectral_radius: 0.95         # Target spectral radius (null = no rescaling)
-  washout: 200                  # Number of initial timesteps discarded
+  washout: 1000                  # Number of initial timesteps discarded
   training_noise: 0             # Uniform noise amplitude added during training (0 = off)
   input_bias: null              # Fixed input signal replacing u[t] (null = use actual input)
 
@@ -36,7 +36,7 @@ esn:
     name: hysteresis                 # "tanh" or "hysteresis" (both use the Hysteresis class)
     args:
       beta: 1.0                 # Steepness of tanh
-      shift: 0.15                # Horizontal shift: tanh(beta * x - shift)
+      shift: 0                # Horizontal shift: tanh(beta * x - shift)
       binary: false             # true = apply sign() after tanh
       h_c: 0.0                  # Coercivity — half-width of hysteresis loop (0 = standard tanh)
       m_r: 1.0                  # Remanence scaling factor (1.0 = standard tanh)
@@ -59,7 +59,7 @@ esn:
 
     # Reservoir weights
     W_res_args:
-      type: [constant, baseline-esn, path]            # "constant", "random", "tile", "baseline-esn", "orthogonal",
+      type: [constant, baseline-esn, experiments/v2/tiles/transfer/mackey]            # "constant", "random", "tile", "baseline-esn", "orthogonal",
                                 #   or path to a .json tile/matrix file,
                                 #   or path to a directory of .json files (auto-expanded to list)
       tile_replicas: true      # true = treat directory contents as replicas to average (not grid search)

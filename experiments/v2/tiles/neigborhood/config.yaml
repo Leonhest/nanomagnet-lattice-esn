@@ -59,11 +59,11 @@ esn:
 
     # Reservoir weights
     W_res_args:
-      type: constant            # "constant", "random", "tile", "baseline-esn", "orthogonal",
+      type: experiments/v2/tiles/neigborhood            # "constant", "random", "tile", "baseline-esn", "orthogonal",
                                 #   or path to a .json tile/matrix file,
                                 #   or path to a directory of .json files (auto-expanded to list)
-      tile_replicas: true      # true = treat directory contents as replicas to average (not grid search)
-      neighborhood: [1, 2, 3, 4, 5]            # Number of distance shells: 1 = 4 neighbors (Von Neumann), 2 = 8 (Moore),
+      tile_replicas: false      # true = treat directory contents as replicas to average (not grid search)
+      neighborhood: from_tile           # Number of distance shells: 1 = 4 neighbors (Von Neumann), 2 = 8 (Moore),
                                 #   3 = 12, 4 = 20, ... Also accepts "Von_Neumann" (=1) or "Moore" (=2)
       self_connection: 0.0      # Self-loop weight on every node (or "from_tile" to resolve from tile JSON metadata)
       sign_frac: 0.5            # Fraction of edges made negative (or "from_tile")
@@ -72,7 +72,7 @@ esn:
 
       # Tile configuration (used when type: tile)
       tile:
-        shape: [5, 5]           # Tile dimensions [rows, cols] — NOT a grid-search dimension
+        shape: [3, 3]           # Tile dimensions [rows, cols] — NOT a grid-search dimension
         method: random           # "random" = random tile weights
 
       # Orthogonal reservoir options
@@ -87,13 +87,13 @@ esn:
 # --- Optimization (for tile search — only used by optimizer scripts) ----------
 optimization:
   method: cmaes                 # "cmaes" or "hyperneat"
-  num_runs: 10                   # Optimization runs per config (each with seed + run_index)
+  num_runs: 1                   # Optimization runs per config (each with seed + run_index)
   num_evals: 3                  # ESN evaluations per candidate (averaged)
   seed: 42                      # Random seed for optimizer
 
   cmaes:
     sigma0: 0.3                 # Initial step size
-    max_generations: 10         # Maximum CMA-ES generations
+    max_generations: 100         # Maximum CMA-ES generations
     pop_size: 20                # Population size
     bounds: [-1, 1]             # Weight bounds [min, max] — NOT a grid-search dimension
     optimize_signs: true        # Optimize edge sign pattern
