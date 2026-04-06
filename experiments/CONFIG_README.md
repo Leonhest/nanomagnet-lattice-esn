@@ -123,6 +123,7 @@ All parameters are shared between `"tanh"` and `"hysteresis"` names (they use th
 | `directed_edges_fraction` | float | *required* | Fraction of bidirectional edge pairs that become unidirectional. `0.0` = fully bidirectional, `1.0` = all edges become one-way. |
 | `directed_edges_weights` | float | *required* | Weight multiplier applied to the "removed" direction of a directed edge. `0.0` = fully removes it, `1.0` = keeps it (no effect). |
 | `alternating_proj` | int | `0` | Number of alternating projection iterations applied to the **full W_res matrix** after construction. Each iteration: (1) SVD-project onto the orthogonal manifold, (2) re-zero all originally-zero entries. Pushes the matrix toward orthogonality while preserving sparsity. Works with all matrix types. |
+| `orthogonal_proj` | bool/string | `false` | Exact orthogonalization of the **full W_res matrix** via polar decomposition (SVD). `false` = off, `"exact"` = project onto the orthogonal manifold. Unlike `alternating_proj`, this makes the matrix **dense** (all zeros are filled). Applied after `alternating_proj` if both are set. Works with all matrix types. |
 | `orthogonal_tile` | bool/string | `false` | Orthogonalize the **tile** before tiling it across the lattice. `false` = off, `"exact"` = polar decomposition (tile becomes dense, exactly orthogonal), `"alternating"` = alternating projections (preserves tile sparsity). Only applies to tile-based types. |
 | `orthogonal_tile_iters` | int | `50` | Number of iterations when `orthogonal_tile: alternating`. Ignored otherwise. |
 

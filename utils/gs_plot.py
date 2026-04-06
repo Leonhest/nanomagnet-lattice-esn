@@ -65,7 +65,7 @@ def _encode_column(values):
         return encoded, tick_labels
 
 
-def _plot_1d(x, y, tick_labels, x_label, y_label, title, filepath, *, std=None):
+def _plot_1d(x, y, tick_labels, x_label, y_label, title, filepath, *, std=None, log_scale=False):
     """Plot a 1D line chart and save as PNG."""
     order = np.argsort(x)
     x, y = x[order], y[order]
@@ -76,6 +76,8 @@ def _plot_1d(x, y, tick_labels, x_label, y_label, title, filepath, *, std=None):
     plt.plot(x, y, marker="o")
     if std is not None:
         plt.fill_between(x, y - std, y + std, alpha=0.2)
+    if log_scale:
+        plt.yscale("log")
     if tick_labels is not None:
         plt.xticks(range(len(tick_labels)), tick_labels, rotation=45, ha="right")
     plt.xlabel(x_label)
@@ -710,6 +712,14 @@ def plot_gridsearch_results(
             filepath = f"{exp_path}/plot_{display_name}{suffix}.png"
             _plot_1d(x_enc, y, x_ticks, display_name, stat_label,
                      f"Grid Search Performance ({stat_label})", filepath)
+
+            # Log-scale plot when range spans >5x
+            y_pos = y[y > 0]
+            if len(y_pos) > 1 and y_pos.max() / y_pos.min() > 5:
+                filepath_log = f"{exp_path}/plot_{display_name}{suffix}_log.png"
+                _plot_1d(x_enc, y, x_ticks, display_name, stat_label,
+                         f"Grid Search Performance ({stat_label}) — log scale",
+                         filepath_log, log_scale=True)
 
             if has_std:
                 std_arr = np.array([std_map.get(pv, 0.0) for pv, _ in stat_results], dtype=float)

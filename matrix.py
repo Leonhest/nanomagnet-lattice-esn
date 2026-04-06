@@ -360,6 +360,11 @@ class Matrix:
         if alt_proj_iters > 0:
             W_res = alternating_projections(W_res.astype(np.float32), alt_proj_iters)
 
+        orthogonal_proj = self.W_res_args.get("orthogonal_proj", False)
+        if orthogonal_proj == "exact":
+            U, _, Vh = np.linalg.svd(W_res.astype(np.float32), full_matrices=True)
+            W_res = (U @ Vh).astype(np.float32)
+
         return torch.FloatTensor(W_res)
 
     def tiled_rectangular(self, m, n):
@@ -458,6 +463,11 @@ class Matrix:
         alt_proj_iters = obj.W_res_args.get("alternating_proj", 0)
         if alt_proj_iters > 0:
             W_res = alternating_projections(W_res.astype(np.float32), alt_proj_iters)
+
+        orthogonal_proj = obj.W_res_args.get("orthogonal_proj", False)
+        if orthogonal_proj == "exact":
+            U, _, Vh = np.linalg.svd(W_res.astype(np.float32), full_matrices=True)
+            W_res = (U @ Vh).astype(np.float32)
 
         obj.W_res = torch.FloatTensor(W_res)
 

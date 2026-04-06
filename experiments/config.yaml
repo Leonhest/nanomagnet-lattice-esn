@@ -77,6 +77,7 @@ esn:
 
       # Orthogonal reservoir options
       alternating_proj: 0       # Alternating projection iterations on the full W_res (0 = off)
+      orthogonal_proj: false    # false or "exact" — polar decomposition on the full W_res (makes matrix dense)
       orthogonal_tile: false    # false, "exact" (polar decomposition), or "alternating"
       orthogonal_tile_iters: 50 # Iterations for orthogonal_tile: alternating
 

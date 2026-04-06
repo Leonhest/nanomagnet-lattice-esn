@@ -26,7 +26,7 @@ data:
 
 # --- ESN ----------------------------------------------------------------------
 esn:
-  spectral_radius: 1         # Target spectral radius (null = no rescaling)
+  spectral_radius: 1.1         # Target spectral radius (null = no rescaling)
   washout: 1000                  # Number of initial timesteps discarded
   training_noise: 0             # Uniform noise amplitude added during training (0 = off)
   input_bias: null              # Fixed input signal replacing u[t] (null = use actual input)
@@ -63,11 +63,11 @@ esn:
                                 #   or path to a .json tile/matrix file,
                                 #   or path to a directory of .json files (auto-expanded to list)
       tile_replicas: false      # true = treat directory contents as replicas to average (not grid search)
-      neighborhood: 4            # Number of distance shells: 1 = 4 neighbors (Von Neumann), 2 = 8 (Moore),
+      neighborhood: 2            # Number of distance shells: 1 = 4 neighbors (Von Neumann), 2 = 8 (Moore),
                                 #   3 = 12, 4 = 20, ... Also accepts "Von_Neumann" (=1) or "Moore" (=2)
       self_connection: 0.9      # Self-loop weight on every node (or "from_tile" to resolve from tile JSON metadata)
       sign_frac: 0.5            # Fraction of edges made negative (or "from_tile")
-      directed_edges_fraction: 0.0  # Fraction of edge pairs made unidirectional (or "from_tile")
+      directed_edges_fraction: 0.9  # Fraction of edge pairs made unidirectional (or "from_tile")
       directed_edges_weights: 0.0   # Weight multiplier for the removed direction (0 = fully remove) (or "from_tile")
 
       # Tile configuration (used when type: tile)
