@@ -28,6 +28,18 @@ class ConfigLoader():
     
     @staticmethod
     def generate_grid_search_configs(exp_path):
+        """Generate fully constructed ConfigLoader instances for grid search."""
+        raw_configs, param_names = ConfigLoader.generate_raw_configs(exp_path)
+        configs = [ConfigLoader(exp_path, cfg) for cfg in raw_configs]
+        return configs, param_names
+
+    @staticmethod
+    def generate_raw_configs(exp_path):
+        """Generate raw config dicts (no model construction) for grid search.
+
+        Returns:
+            tuple: (list of raw config dicts, list of param names)
+        """
         config_path = ConfigLoader._find_conf_static(exp_path)
         with open(config_path, "r") as f:
             base_config = yaml.safe_load(f)
@@ -47,26 +59,56 @@ class ConfigLoader():
         list_params = ConfigLoader._find_list_parameters(base_config)
 
         if not list_params:
-            configs = []
-            for cfg in ConfigLoader._expand_replicas(base_config, replica_files, num_runs, exp_path):
-                configs.append(cfg)
-            return configs, []
+            raw_configs = list(ConfigLoader._expand_raw_replicas(
+                base_config, replica_files, num_runs))
+            return raw_configs, []
 
         # Generate all combinations
         param_names = list(list_params.keys())
         param_values = list(list_params.values())
         combinations = list(product(*param_values))
 
-        configs = []
+        raw_configs = []
         for combo in combinations:
             config = copy.deepcopy(base_config)
             for param_name, param_value in zip(param_names, combo):
                 ConfigLoader._set_nested_value(config, param_name, param_value)
             ConfigLoader._resolve_from_tile_params(config)
-            for cfg in ConfigLoader._expand_replicas(config, replica_files, num_runs, exp_path):
-                configs.append(cfg)
+            for cfg in ConfigLoader._expand_raw_replicas(
+                    config, replica_files, num_runs):
+                raw_configs.append(cfg)
 
-        return configs, param_names
+        return raw_configs, param_names
+
+    @staticmethod
+    def _expand_raw_replicas(config, replica_files, num_runs):
+        """Yield raw config dicts, expanding tile replicas as an inner loop."""
+        if replica_files:
+            try:
+                type_val = config["esn"]["W_args"]["W_res_args"]["type"]
+            except (KeyError, TypeError):
+                type_val = None
+
+            tile_files = replica_files.get(type_val, [])
+            if tile_files:
+                for tile_path in tile_files:
+                    for _ in range(num_runs):
+                        cfg = copy.deepcopy(config)
+                        cfg["esn"]["W_args"]["W_res_args"]["type"] = tile_path
+                        cfg["esn"]["W_args"]["W_res_args"]["_replica_group"] = type_val
+                        cfg["esn"]["W_args"]["W_res_args"].pop("_tile_replica_files", None)
+                        cfg["esn"]["W_args"]["W_res_args"].pop("tile_replicas", None)
+                        ConfigLoader._resolve_from_tile_params(cfg)
+                        yield cfg
+                return
+
+        for _ in range(num_runs):
+            cfg = copy.deepcopy(config)
+            try:
+                cfg["esn"]["W_args"]["W_res_args"].pop("_tile_replica_files", None)
+            except (KeyError, TypeError):
+                pass
+            yield cfg
 
     @staticmethod
     def _expand_replicas(config, replica_files, num_runs, exp_path):

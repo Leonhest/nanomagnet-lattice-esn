@@ -2,6 +2,7 @@ import gc
 import json
 import logging
 import os
+from multiprocessing import Pool
 
 import numpy as np
 
@@ -141,6 +142,24 @@ def _cleanup_config(config):
     del config.conf
 
 
+def _run_single_config_worker(args):
+    """Worker function for parallel execution. Builds ConfigLoader and runs."""
+    raw_conf, exp_path, res_metrics_mode, param_names, worker_seed = args
+    import torch
+    np.random.seed(worker_seed)
+    torch.manual_seed(worker_seed)
+    config = ConfigLoader(exp_path, raw_conf)
+
+    if res_metrics_mode:
+        metrics = run_res_metrics(config.conf)
+        key = _extract_param_key(config.conf, param_names)
+        return ("res_metrics", key, metrics)
+    else:
+        run_result = run(config.conf, exp_path)
+        key = _extract_param_key(config.conf, param_names)
+        return ("nrmse", key, run_result)
+
+
 def _run_all_configs(configs, param_names, exp_path, *, res_metrics_mode):
     nrmse_runs_by_config = {} if not res_metrics_mode else None
     res_metrics_runs_by_config = {} if res_metrics_mode else None
@@ -171,6 +190,37 @@ def _run_all_configs(configs, param_names, exp_path, *, res_metrics_mode):
         # Force garbage collection periodically (every 1000 configs or at the end)
         if (i + 1) % 1000 == 0 or (i + 1) == len(configs):
             gc.collect()
+
+    return nrmse_runs_by_config, res_metrics_runs_by_config
+
+
+def _run_all_configs_parallel(raw_configs, param_names, exp_path, *, res_metrics_mode, n_workers):
+    """Run all configs in parallel using multiprocessing."""
+    nrmse_runs_by_config = {} if not res_metrics_mode else None
+    res_metrics_runs_by_config = {} if res_metrics_mode else None
+
+    rng = np.random.RandomState(42)
+    seeds = rng.randint(0, 2**31, size=len(raw_configs))
+    args = [(cfg, exp_path, res_metrics_mode, param_names, int(s))
+            for cfg, s in zip(raw_configs, seeds)]
+
+    logger.info(f"Running {len(raw_configs)} configs across {n_workers} parallel workers")
+    with Pool(n_workers) as pool:
+        results = pool.map(_run_single_config_worker, args)
+
+    for mode, key, result in results:
+        if mode == "res_metrics":
+            _ensure_res_metrics_bucket_initialized(key, res_metrics_runs_by_config)
+            _record_res_metrics_run(key, metrics=result, res_metrics_runs_by_config=res_metrics_runs_by_config)
+        else:
+            test_score = result["score"]
+            _ensure_nrmse_bucket_initialized(key, nrmse_runs_by_config)
+            _record_nrmse_run(
+                key,
+                test_score=test_score,
+                run_result=result,
+                nrmse_runs_by_config=nrmse_runs_by_config,
+            )
 
     return nrmse_runs_by_config, res_metrics_runs_by_config
 
@@ -300,15 +350,33 @@ def main(exp_path: str = "./experiments/test/") -> None:
     Entry point for running an experiment folder (config + optional grid search).
     """
     _setup_logging(exp_path)
-    configs, param_names = _load_configs(exp_path)
-    res_metrics_mode = _detect_modes(configs)
 
-    nrmse_runs_by_config, res_metrics_runs_by_config = _run_all_configs(
-        configs,
-        param_names,
-        exp_path,
-        res_metrics_mode=res_metrics_mode,
-    )
+    n_workers = int(os.environ.get("ESN_WORKERS", os.cpu_count() or 1))
+
+    if n_workers > 1:
+        raw_configs, param_names = ConfigLoader.generate_raw_configs(exp_path)
+        res_metrics_mode = raw_configs[0].get("res_metrics", False) if raw_configs else False
+
+        num_runs = raw_configs[0].get("num_runs", 1) if raw_configs else 1
+        num_unique = len(raw_configs) // num_runs if num_runs > 0 else len(raw_configs)
+        logger.info(
+            f"Found {num_unique} unique config(s), running each {num_runs} time(s) = {len(raw_configs)} total runs"
+        )
+
+        nrmse_runs_by_config, res_metrics_runs_by_config = _run_all_configs_parallel(
+            raw_configs, param_names, exp_path,
+            res_metrics_mode=res_metrics_mode, n_workers=n_workers,
+        )
+    else:
+        configs, param_names = _load_configs(exp_path)
+        res_metrics_mode = _detect_modes(configs)
+
+        nrmse_runs_by_config, res_metrics_runs_by_config = _run_all_configs(
+            configs,
+            param_names,
+            exp_path,
+            res_metrics_mode=res_metrics_mode,
+        )
 
     _finalize(
         exp_path,
@@ -317,5 +385,4 @@ def main(exp_path: str = "./experiments/test/") -> None:
         nrmse_runs_by_config=nrmse_runs_by_config,
         res_metrics_runs_by_config=res_metrics_runs_by_config,
     )
-
 
