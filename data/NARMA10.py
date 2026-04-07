@@ -69,7 +69,8 @@ class NARMA10():
             raise DivergentTimeseriesError('Divergent NARMA time series, try again')
 
         splits = self._split_data(u, y)
-        self.save_data(**splits)
+        if self.conf.get("save", False):
+            self.save_data(**splits)
 
         self.u_train = torch.FloatTensor(splits["u_train"])
         self.y_train = torch.FloatTensor(splits["y_train"])

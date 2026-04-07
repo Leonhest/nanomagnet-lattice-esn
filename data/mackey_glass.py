@@ -69,7 +69,8 @@ class MackeyGlass():
         y = torch.from_numpy(series[h:sample_len + h]).float()
 
         splits = self._split_data(u, y)
-        self.save_data(**splits)
+        if self.conf.get("save", False):
+            self.save_data(**splits)
 
         self.u_train = torch.FloatTensor(splits["u_train"])
         self.y_train = torch.FloatTensor(splits["y_train"])
