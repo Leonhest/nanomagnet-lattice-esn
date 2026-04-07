@@ -72,7 +72,7 @@ esn:
 
       # Tile configuration (used when type: tile)
       tile:
-        shape: [3, 3]           # Tile dimensions [rows, cols] — NOT a grid-search dimension
+        shape: [[1, 1],[2,2],[3, 3],[5,5],[10,10],[20,20]]           # Tile dimensions [rows, cols] — NOT a grid-search dimension
         method: random           # "random" = random tile weights
 
       # Orthogonal reservoir options
@@ -93,7 +93,7 @@ optimization:
 
   cmaes:
     sigma0: 0.3                 # Initial step size
-    max_generations: 100        # Maximum CMA-ES generations
+    max_generations: 1000        # Maximum CMA-ES generations
     pop_size: 20                # Population size
     bounds: [-1, 1]             # Weight bounds [min, max] — NOT a grid-search dimension
     optimize_signs: true        # Optimize edge sign pattern
