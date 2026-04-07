@@ -179,7 +179,8 @@ class ConfigLoader():
 
         def _list_jsons(directory):
             jsons = sorted(
-                os.path.join(directory, f) for f in os.listdir(directory) if f.endswith(".json")
+                os.path.join(directory, f) for f in os.listdir(directory)
+                if f.endswith(".json") and not f.startswith("reservoir_stats")
             )
             return jsons
 
