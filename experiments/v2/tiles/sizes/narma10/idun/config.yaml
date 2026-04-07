@@ -4,7 +4,7 @@
 # Any field that is a YAML list becomes a grid-search dimension automatically.
 # ============================================================================
 
-num_runs: 10                    # Repetitions per grid-search combination (fresh random seed each)
+num_runs: 100                    # Repetitions per grid-search combination (fresh random seed each)
 res_metrics: false              # true = reservoir metrics mode (KQ, gen, MC); false = NRMSE mode
 state_plot: false               # true = save reservoir node activation plots
 plot_deciles: false             # true = plot decile bands in results
@@ -59,7 +59,7 @@ esn:
 
     # Reservoir weights
     W_res_args:
-      type: constant          # "constant", "random", "tile", "baseline-esn", "orthogonal",
+      type: [constant, baseline-esn, experiments/v2/tiles/sizes/narma10/idun]          # "constant", "random", "tile", "baseline-esn", "orthogonal",
                                 #   or path to a .json tile/matrix file,
                                 #   or path to a directory of .json files (auto-expanded to list)
       tile_replicas: false      # true = treat directory contents as replicas to average (not grid search)
@@ -72,7 +72,7 @@ esn:
 
       # Tile configuration (used when type: tile)
       tile:
-        shape: [[20,20]]           # Tile dimensions [rows, cols] — NOT a grid-search dimension
+        shape: from_tile          # Tile dimensions [rows, cols] — NOT a grid-search dimension
         method: random           # "random" = random tile weights
 
       # Orthogonal reservoir options
