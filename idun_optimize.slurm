@@ -9,7 +9,7 @@
 #SBATCH --partition=CPUQ
 #SBATCH --time=1-00:00:00              # 1 day wall time (adjust as needed)
 #SBATCH --nodes=1
-#SBATCH --cpus-per-task=20
+#SBATCH --cpus-per-task=28
 #SBATCH --mem=32G
 #SBATCH --constraint=pec6520
 #SBATCH --output=slurm-optimize-%j.out
