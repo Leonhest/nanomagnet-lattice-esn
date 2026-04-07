@@ -37,6 +37,11 @@ echo "Experiment:    $EXP_PATH"
 echo "Started:       $(date)"
 echo "========================================"
 
+# --- Prevent BLAS thread contention across workers ----------------------------
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+
 # --- Parallel workers (matches allocated cores) -------------------------------
 export ESN_WORKERS=$SLURM_CPUS_PER_TASK
 
