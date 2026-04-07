@@ -93,8 +93,10 @@ def _plot_convergence(histories, labels, save_path):
     fig, ax = plt.subplots(figsize=(8, 5))
     for history, label in zip(histories, labels):
         gens = range(1, len(history["overall_best"]) + 1)
-        # Clip gen_mean to avoid outliers blowing up the scale
-        gen_mean = np.clip(history["gen_mean"], 0, 1.0)
+        # Clip gen_mean outliers to 95th percentile
+        gen_mean = np.array(history["gen_mean"])
+        clip_val = np.percentile(gen_mean, 95)
+        gen_mean = np.clip(gen_mean, 0, clip_val)
         ax.plot(gens, history["overall_best"], marker=".", markersize=3, label=f"{label} (best)")
         ax.plot(gens, gen_mean, alpha=0.3, linewidth=1, label=f"{label} (gen mean)")
     ax.set_xlabel("Generation")
