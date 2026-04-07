@@ -4,6 +4,9 @@ import os
 import sys
 from itertools import product
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import yaml
 
 from data.NARMA10 import NARMA10
@@ -83,6 +86,29 @@ def _make_tile_dirname(method, param_names, config):
     return "_".join(parts)
 
 
+def _plot_convergence(histories, labels, save_path):
+    """Plot NRMSE over generations for one or more optimization runs."""
+    import numpy as np
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for history, label in zip(histories, labels):
+        gens = range(1, len(history["overall_best"]) + 1)
+        # Clip gen_mean to avoid outliers blowing up the scale
+        gen_mean = np.clip(history["gen_mean"], 0, 1.0)
+        ax.plot(gens, history["overall_best"], marker=".", markersize=3, label=f"{label} (best)")
+        ax.plot(gens, gen_mean, alpha=0.3, linewidth=1, label=f"{label} (gen mean)")
+    ax.set_xlabel("Generation")
+    ax.set_ylabel("NRMSE")
+    ax.set_title("CMA-ES Convergence")
+    ax.set_yscale("log")
+    ax.legend(fontsize=7)
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    fig.savefig(save_path, dpi=150)
+    plt.close(fig)
+    print(f"Convergence plot saved to {save_path}")
+
+
 def _run_optimization(method, config, dataset, exp_path):
     # Disable internal tile saving — we handle it ourselves
     config.setdefault("optimization", {}).setdefault("output", {})["save_best_tile"] = False
@@ -94,7 +120,8 @@ def _run_optimization(method, config, dataset, exp_path):
     elif method == "hyperneat":
         from optimizer.hyperneat import run_hyperneat
 
-        return run_hyperneat(config, dataset, exp_path)
+        best_tile, best_nrmse = run_hyperneat(config, dataset, exp_path)
+        return best_tile, best_nrmse, None
     else:
         raise ValueError(f"Unknown optimization method: {method}")
 
@@ -136,6 +163,7 @@ def main(exp_path):
 
         logger.info(f"Config {i+1}/{len(configs)} ({param_desc})")
 
+        run_histories = []
         for run_idx in range(opt_num_runs):
             run_config = copy.deepcopy(config)
             base_seed = run_config.get("optimization", {}).get("seed", 42)
@@ -144,7 +172,9 @@ def main(exp_path):
             if opt_num_runs > 1:
                 logger.info(f"  Optimization run {run_idx+1}/{opt_num_runs} (seed={base_seed + run_idx})")
 
-            best_tile, best_nrmse = _run_optimization(method, run_config, dataset, exp_path)
+            best_tile, best_nrmse, history = _run_optimization(method, run_config, dataset, exp_path)
+            if history is not None:
+                run_histories.append((history, f"run {run_idx}"))
             logger.info(f"  Finished. Best NRMSE: {best_nrmse:.6f}")
 
             if best_tile is not None:
@@ -167,6 +197,12 @@ def main(exp_path):
 
                 save_tile(best_tile, save_path, metadata=metadata)
                 logger.info(f"  Tile saved to {save_path}")
+
+        # Plot convergence for this config
+        if run_histories:
+            histories, labels = zip(*run_histories)
+            plot_name = f"convergence_{method}_{param_desc.replace(', ', '_').replace('=', '')}.png"
+            _plot_convergence(histories, labels, os.path.join(exp_path, plot_name))
 
 
 if __name__ == "__main__":

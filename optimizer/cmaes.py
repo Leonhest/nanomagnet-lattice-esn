@@ -137,6 +137,7 @@ def run_cmaes(config, dataset, output_dir):
 
     best_nrmse = float("inf")
     best_params = None
+    history = {"gen_best": [], "overall_best": [], "gen_mean": []}
 
     generation = 0
     while not es.stop():
@@ -152,6 +153,9 @@ def run_cmaes(config, dataset, output_dir):
             best_params = candidates[gen_best_idx].copy()
 
         generation += 1
+        history["gen_best"].append(gen_best)
+        history["overall_best"].append(best_nrmse)
+        history["gen_mean"].append(float(np.mean(fitnesses)))
         logger.info(
             f"Generation {generation}: best_this_gen={gen_best:.6f}, "
             f"overall_best={best_nrmse:.6f}"
@@ -173,4 +177,4 @@ def run_cmaes(config, dataset, output_dir):
         })
         logger.info(f"Best tile saved to {save_path}")
 
-    return best_tile, best_nrmse
+    return best_tile, best_nrmse, history

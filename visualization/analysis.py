@@ -77,9 +77,10 @@ def analyze_reservoir(W_res, *, G_res=None, tile_G=None, metadata=None,
     n_neg = int(np.sum(weights < 0))
     n_zero = int(np.sum(weights == 0))
 
-    # Directed edge analysis (skip self-loops)
+    # Directed edge analysis (skip self-loops and zero-weight edges)
     source_G = tile_G if has_tile else G_res
-    non_self_edges = [(u, v) for u, v, _ in source_G.edges(data=True) if u != v]
+    non_self_edges = [(u, v) for u, v, d in source_G.edges(data=True)
+                      if u != v and d.get("weight", 1) != 0]
     edge_set = set(non_self_edges)
     bidirectional = 0
     unidirectional = 0
@@ -198,12 +199,20 @@ def analyze_reservoir(W_res, *, G_res=None, tile_G=None, metadata=None,
     ax12.set_xlabel("Total Recurrent Influence")
     ax12.set_ylabel("Count")
 
-    # Row 2, Col 0: In/out degree histogram
+    # Row 2, Col 0: In/out degree histogram (side-by-side bars)
     ax20 = fig.add_subplot(gs[2, 0])
-    bins = np.arange(min(in_degrees.min(), out_degrees.min()) - 0.5,
-                     max(in_degrees.max(), out_degrees.max()) + 1.5, 1)
-    ax20.hist(in_degrees, bins=bins, alpha=0.6, color="steelblue", edgecolor="black", label="In-degree")
-    ax20.hist(out_degrees, bins=bins, alpha=0.6, color="orange", edgecolor="black", label="Out-degree")
+    all_degrees = np.concatenate([in_degrees, out_degrees])
+    unique_degrees = np.arange(all_degrees.min(), all_degrees.max() + 1)
+    in_counts = np.array([np.sum(in_degrees == d) for d in unique_degrees])
+    out_counts = np.array([np.sum(out_degrees == d) for d in unique_degrees])
+    bar_width = 0.35
+    x_pos = np.arange(len(unique_degrees))
+    ax20.bar(x_pos - bar_width / 2, in_counts, bar_width, color="steelblue",
+             edgecolor="black", alpha=0.8, label="In-degree")
+    ax20.bar(x_pos + bar_width / 2, out_counts, bar_width, color="orange",
+             edgecolor="black", alpha=0.8, label="Out-degree")
+    ax20.set_xticks(x_pos)
+    ax20.set_xticklabels(unique_degrees)
     ax20.set_title("In/Out Degree Distribution")
     ax20.set_xlabel("Degree")
     ax20.set_ylabel("Count")
@@ -535,6 +544,11 @@ def analyze_from_config(config_path, *, save_dir=None, show=True, eigvec=False,
                                          save_path=eigvec_path)
         else:
             mat = Matrix(W_args)
+            # Apply spectral radius rescaling (same as ESN.__init__)
+            if target_sr is not None:
+                sr_raw = spectral_radius(mat.W_res)
+                if sr_raw > 0:
+                    mat.W_res *= target_sr / sr_raw
             W_res_np = mat.W_res.detach().cpu().numpy()
             G_res = getattr(mat, "G_res", None)
 
