@@ -9,8 +9,9 @@
 #SBATCH --partition=CPUQ
 #SBATCH --time=1-00:00:00              # 1 day wall time (adjust as needed)
 #SBATCH --nodes=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=16G
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
+#SBATCH --constraint=pec6520
 #SBATCH --output=slurm-optimize-%j.out
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=leon.hesthaug@gmail.com       # TODO: replace with your email
