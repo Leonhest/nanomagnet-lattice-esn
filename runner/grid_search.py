@@ -199,7 +199,7 @@ def _run_all_configs_parallel(raw_configs, param_names, exp_path, *, res_metrics
     nrmse_runs_by_config = {} if not res_metrics_mode else None
     res_metrics_runs_by_config = {} if res_metrics_mode else None
 
-    rng = np.random.RandomState(42)
+    rng = np.random.RandomState()
     seeds = rng.randint(0, 2**31, size=len(raw_configs))
     args = [(cfg, exp_path, res_metrics_mode, param_names, int(s))
             for cfg, s in zip(raw_configs, seeds)]
