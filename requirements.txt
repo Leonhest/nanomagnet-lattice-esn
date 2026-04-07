@@ -1,8 +1,10 @@
 cma
-matplotlib==3.10.7
+matplotlib==3.10.8
 neat-python
 networkx==3.4.2
-numpy==2.3.4
+numpy==2.4.4
+plotly==6.3.1
 PyYAML==6.0.3
-scikit_learn==1.7.2
+scikit_learn==1.8.0
+scipy==1.17.1
 torch==2.8.0
