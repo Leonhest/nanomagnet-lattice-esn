@@ -4,7 +4,7 @@
 # Any field that is a YAML list becomes a grid-search dimension automatically.
 # ============================================================================
 
-num_runs: 10                    # Repetitions per grid-search combination (fresh random seed each)
+num_runs: 100                    # Repetitions per grid-search combination (fresh random seed each)
 res_metrics: false              # true = reservoir metrics mode (KQ, gen, MC); false = NRMSE mode
 state_plot: false               # true = save reservoir node activation plots
 plot_deciles: false             # true = plot decile bands in results
