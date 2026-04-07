@@ -9,7 +9,7 @@
 #SBATCH --partition=CPUQ
 #SBATCH --time=1-00:00:00              # 1 day wall time (adjust as needed)
 #SBATCH --nodes=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=20
 #SBATCH --mem=32G
 #SBATCH --constraint=pec6520
 #SBATCH --output=slurm-optimize-%j.out
@@ -36,6 +36,9 @@ echo "CPUs per task: $SLURM_CPUS_PER_TASK"
 echo "Experiment:    $EXP_PATH"
 echo "Started:       $(date)"
 echo "========================================"
+
+# --- Parallel workers (matches allocated cores) -------------------------------
+export ESN_WORKERS=$SLURM_CPUS_PER_TASK
 
 # --- Run optimization ---------------------------------------------------------
 python optimize.py "$EXP_PATH"

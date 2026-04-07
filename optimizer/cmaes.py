@@ -1,4 +1,6 @@
 import logging
+import os
+from multiprocessing import Pool
 
 import cma
 import numpy as np
@@ -7,6 +9,38 @@ from matrix import Matrix, OffsetTile, save_tile, _resolve_neighborhood_offsets
 from optimizer.fitness import evaluate_tile
 
 logger = logging.getLogger(__name__)
+
+
+class _FitnessEvaluator:
+    """Picklable fitness evaluator for multiprocessing."""
+
+    def __init__(self, param_list, edge_signs, edge_dir_scales, tile_shape,
+                 neighborhood, W_args, esn_conf, dataset, num_evals,
+                 optimize_self_connections):
+        self.param_list = param_list
+        self.edge_signs = edge_signs
+        self.edge_dir_scales = edge_dir_scales
+        self.tile_shape = tile_shape
+        self.neighborhood = neighborhood
+        self.W_args = W_args
+        self.esn_conf = esn_conf
+        self.dataset = dataset
+        self.num_evals = num_evals
+        self.optimize_self_connections = optimize_self_connections
+
+    def params_to_tile(self, params):
+        offset_weights = {}
+        for i, (pos, offset) in enumerate(self.param_list):
+            weight = params[i] * self.edge_signs[i] * self.edge_dir_scales[i]
+            offset_weights[(pos, offset)] = float(weight)
+        return OffsetTile(self.tile_shape, offset_weights, self.neighborhood)
+
+    def __call__(self, params):
+        tile = self.params_to_tile(params)
+        return evaluate_tile(
+            tile, self.W_args, self.esn_conf, self.dataset, self.num_evals,
+            skip_self_connection=self.optimize_self_connections,
+        )
 
 
 def run_cmaes(config, dataset, output_dir):
@@ -97,20 +131,13 @@ def run_cmaes(config, dataset, output_dir):
     else:
         edge_dir_scales = np.ones(num_params)
 
-    def params_to_tile(params):
-        """Convert a parameter vector to an OffsetTile."""
-        offset_weights = {}
-        for i, (pos, offset) in enumerate(param_list):
-            weight = params[i] * edge_signs[i] * edge_dir_scales[i]
-            offset_weights[(pos, offset)] = float(weight)
-        return OffsetTile(tile_shape, offset_weights, neighborhood)
+    evaluator = _FitnessEvaluator(
+        param_list, edge_signs, edge_dir_scales, tile_shape,
+        neighborhood, W_args, esn_conf, dataset, num_evals,
+        optimize_self_connections,
+    )
 
-    def fitness(params):
-        tile = params_to_tile(params)
-        return evaluate_tile(
-            tile, W_args, esn_conf, dataset, num_evals,
-            skip_self_connection=optimize_self_connections,
-        )
+    n_workers = int(os.environ.get("ESN_WORKERS", os.cpu_count() or 1))
 
     # CMA-ES setup
     sigma0 = cmaes_conf.get("sigma0", 0.3)
@@ -140,9 +167,15 @@ def run_cmaes(config, dataset, output_dir):
     history = {"gen_best": [], "overall_best": [], "gen_mean": []}
 
     generation = 0
+    logger.info(f"CMA-ES: using {n_workers} parallel workers")
+    pool = Pool(n_workers) if n_workers > 1 else None
+
     while not es.stop():
         candidates = es.ask()
-        fitnesses = [fitness(c) for c in candidates]
+        if pool is not None:
+            fitnesses = pool.map(evaluator, candidates)
+        else:
+            fitnesses = [evaluator(c) for c in candidates]
         es.tell(candidates, fitnesses)
         es.disp()
 
@@ -161,10 +194,13 @@ def run_cmaes(config, dataset, output_dir):
             f"overall_best={best_nrmse:.6f}"
         )
 
-    best_tile = params_to_tile(best_params)
+    if pool is not None:
+        pool.close()
+        pool.join()
+
+    best_tile = evaluator.params_to_tile(best_params)
 
     if opt_conf.get("output", {}).get("save_best_tile", True):
-        import os
         save_path = os.path.join(output_dir, "best_tile.json")
         save_tile(best_tile, save_path, metadata={
             "method": "cmaes",
