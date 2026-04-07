@@ -204,6 +204,12 @@ def _run_all_configs_parallel(raw_configs, param_names, exp_path, *, res_metrics
     args = [(cfg, exp_path, res_metrics_mode, param_names, int(s))
             for cfg, s in zip(raw_configs, seeds)]
 
+    # Prevent BLAS thread contention across workers
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    os.environ.setdefault("MKL_NUM_THREADS", "1")
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+    os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+
     logger.info(f"Running {len(raw_configs)} configs across {n_workers} parallel workers")
     with Pool(n_workers) as pool:
         results = pool.map(_run_single_config_worker, args)

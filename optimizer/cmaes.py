@@ -166,6 +166,12 @@ def run_cmaes(config, dataset, output_dir):
     best_params = None
     history = {"gen_best": [], "overall_best": [], "gen_mean": []}
 
+    # Prevent BLAS thread contention across workers
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    os.environ.setdefault("MKL_NUM_THREADS", "1")
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+    os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+
     generation = 0
     logger.info(f"CMA-ES: using {n_workers} parallel workers")
     pool = Pool(n_workers) if n_workers > 1 else None
