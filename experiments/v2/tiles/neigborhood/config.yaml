@@ -12,7 +12,7 @@ plot_deciles: false             # true = plot decile bands in results
 # --- Dataset ------------------------------------------------------------------
 data:
   name: NARMA                   # "NARMA", "Mackey-Glass", or "Lorenz"
-  load: true                    # true = load from .npy files; false = generate fresh data
+  load: false                    # true = load from .npy files; false = generate fresh data
   system_order: 10              # NARMA only — 10, 20, or 30
   sample_len: 6250              # Total number of time steps
   split_ratio: 0.4              # Fraction of data used for training (rest is test)
@@ -63,7 +63,7 @@ esn:
                                 #   or path to a .json tile/matrix file,
                                 #   or path to a directory of .json files (auto-expanded to list)
       tile_replicas: false      # true = treat directory contents as replicas to average (not grid search)
-      neighborhood: [1, 2, 3, 4, 5]           # Number of distance shells: 1 = 4 neighbors (Von Neumann), 2 = 8 (Moore),
+      neighborhood: from_tile           # Number of distance shells: 1 = 4 neighbors (Von Neumann), 2 = 8 (Moore),
                                 #   3 = 12, 4 = 20, ... Also accepts "Von_Neumann" (=1) or "Moore" (=2)
       self_connection: 0.0      # Self-loop weight on every node (or "from_tile" to resolve from tile JSON metadata)
       sign_frac: 0.5            # Fraction of edges made negative (or "from_tile")

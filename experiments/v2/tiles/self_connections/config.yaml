@@ -4,7 +4,7 @@
 # Any field that is a YAML list becomes a grid-search dimension automatically.
 # ============================================================================
 
-num_runs: 100                   # Repetitions per grid-search combination (fresh random seed each)
+num_runs: 10                   # Repetitions per grid-search combination (fresh random seed each)
 res_metrics: false              # true = reservoir metrics mode (KQ, gen, MC); false = NRMSE mode
 state_plot: false               # true = save reservoir node activation plots
 plot_deciles: false             # true = plot decile bands in results
@@ -12,7 +12,7 @@ plot_deciles: false             # true = plot decile bands in results
 # --- Dataset ------------------------------------------------------------------
 data:
   name: NARMA                   # "NARMA", "Mackey-Glass", or "Lorenz"
-  load: true                    # true = load from .npy files; false = generate fresh data
+  load: false                    # true = load from .npy files; false = generate fresh data
   system_order: 10              # NARMA only — 10, 20, or 30
   sample_len: 6250              # Total number of time steps
   split_ratio: 0.4              # Fraction of data used for training (rest is test)
