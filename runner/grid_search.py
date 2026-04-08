@@ -146,18 +146,37 @@ def _run_single_config_worker(args):
     """Worker function for parallel execution. Builds ConfigLoader and runs."""
     raw_conf, exp_path, res_metrics_mode, param_names, worker_seed = args
     import torch
+    import signal
+
+    timeout = int(os.environ.get("ESN_TIMEOUT", 300))
+
+    def _timeout_handler(signum, frame):
+        raise TimeoutError("Config evaluation timed out")
+
     np.random.seed(worker_seed)
     torch.manual_seed(worker_seed)
-    config = ConfigLoader(exp_path, raw_conf)
 
-    if res_metrics_mode:
-        metrics = run_res_metrics(config.conf)
-        key = _extract_param_key(config.conf, param_names)
-        return ("res_metrics", key, metrics)
-    else:
-        run_result = run(config.conf, exp_path)
-        key = _extract_param_key(config.conf, param_names)
+    old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+    signal.alarm(timeout)
+    try:
+        config = ConfigLoader(exp_path, raw_conf)
+
+        if res_metrics_mode:
+            metrics = run_res_metrics(config.conf)
+            key = _extract_param_key(config.conf, param_names)
+            signal.alarm(0)
+            return ("res_metrics", key, metrics)
+        else:
+            run_result = run(config.conf, exp_path)
+            key = _extract_param_key(config.conf, param_names)
+        signal.alarm(0)
         return ("nrmse", key, run_result)
+    except (TimeoutError, Exception) as e:
+        signal.alarm(0)
+        logger.warning(f"Worker failed: {e}")
+        return None
+    finally:
+        signal.signal(signal.SIGALRM, old_handler)
 
 
 def _run_all_configs(configs, param_names, exp_path, *, res_metrics_mode):
@@ -210,23 +229,36 @@ def _run_all_configs_parallel(raw_configs, param_names, exp_path, *, res_metrics
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
     os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
 
-    logger.info(f"Running {len(raw_configs)} configs across {n_workers} parallel workers")
-    with Pool(n_workers) as pool:
-        results = pool.map(_run_single_config_worker, args)
+    timeout = int(os.environ.get("ESN_TIMEOUT", 300))  # seconds per config, default 5 min
+    logger.info(f"Running {len(raw_configs)} configs across {n_workers} parallel workers (timeout={timeout}s)")
 
-    for mode, key, result in results:
-        if mode == "res_metrics":
-            _ensure_res_metrics_bucket_initialized(key, res_metrics_runs_by_config)
-            _record_res_metrics_run(key, metrics=result, res_metrics_runs_by_config=res_metrics_runs_by_config)
-        else:
-            test_score = result["score"]
-            _ensure_nrmse_bucket_initialized(key, nrmse_runs_by_config)
-            _record_nrmse_run(
-                key,
-                test_score=test_score,
-                run_result=result,
-                nrmse_runs_by_config=nrmse_runs_by_config,
-            )
+    completed = 0
+    skipped = 0
+    with Pool(n_workers) as pool:
+        for result in pool.imap_unordered(_run_single_config_worker, args):
+            if result is None:
+                skipped += 1
+                continue
+
+            mode, key, data = result
+            if mode == "res_metrics":
+                _ensure_res_metrics_bucket_initialized(key, res_metrics_runs_by_config)
+                _record_res_metrics_run(key, metrics=data, res_metrics_runs_by_config=res_metrics_runs_by_config)
+            else:
+                test_score = data["score"]
+                _ensure_nrmse_bucket_initialized(key, nrmse_runs_by_config)
+                _record_nrmse_run(
+                    key,
+                    test_score=test_score,
+                    run_result=data,
+                    nrmse_runs_by_config=nrmse_runs_by_config,
+                )
+
+            completed += 1
+            if completed % 100 == 0:
+                logger.info(f"Progress: {completed}/{len(raw_configs)} completed, {skipped} skipped")
+
+    logger.info(f"Finished: {completed} completed, {skipped} skipped out of {len(raw_configs)}")
 
     return nrmse_runs_by_config, res_metrics_runs_by_config
 
