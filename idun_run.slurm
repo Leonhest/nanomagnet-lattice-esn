@@ -41,6 +41,7 @@ export OPENBLAS_NUM_THREADS=1
 
 # --- Parallel workers (matches allocated cores) -------------------------------
 export ESN_WORKERS=$SLURM_CPUS_PER_TASK
+export ESN_TIMEOUT=30                     # Max seconds per config (skip if exceeded)
 
 # --- Run experiment -----------------------------------------------------------
 python run.py "$EXP_PATH"
