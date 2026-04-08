@@ -32,7 +32,8 @@ def compute_reservoir_statistics(model, states=None):
 
     W_res = model.W.W_res.detach().cpu().numpy()
     tri, tri_ratio = calculate_resolvent_metrics(W_res)
-    avg_tri = float(np.mean(tri))
+    tri_mask = np.abs(tri) <= 100
+    avg_tri = float(np.mean(tri[tri_mask])) if tri_mask.any() else 0.0
     avg_tri_ratio = float(np.mean(tri_ratio))
     orth_error = orthogonality_error(W_res)
 
