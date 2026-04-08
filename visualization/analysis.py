@@ -373,7 +373,7 @@ def analyze_tile(tile_path, *, lattice_size=400, tile_shape=None,
     tile_meta = {
         "Tile file": os.path.basename(tile_path),
         "Tile shape": f"{tile_shape[0]}x{tile_shape[1]}",
-        "Tile nodes": tile_G.number_of_nodes(),
+        "Tile nodes": len(tile_G.nodes()),
         "Tile edges": tile_G.number_of_edges(),
     }
     if metadata:
@@ -399,7 +399,7 @@ def analyze_tile(tile_path, *, lattice_size=400, tile_shape=None,
     # Augment stats with tile-specific fields
     stats["tile_path"] = tile_path
     stats["tile_shape"] = tile_shape
-    stats["tile_nodes"] = tile_G.number_of_nodes()
+    stats["tile_nodes"] = len(tile_G.nodes())
     stats["tile_edges"] = tile_G.number_of_edges()
 
     return stats
@@ -468,14 +468,20 @@ def analyze_from_config(config_path, *, save_dir=None, show=True, eigvec=False,
     if save_dir is None:
         save_dir = os.path.dirname(os.path.abspath(config_path))
 
+    ConfigLoader._expand_folder_paths(base_config)
     W_args_base = base_config["esn"]["W_args"]
     target_sr = base_config["esn"].get("spectral_radius")
+    sr_is_list = isinstance(target_sr, list)
 
     # Find grid search lists within W_args, using the full prefix so the
     # exclude set in ConfigLoader (e.g. "esn.W_args.W_res_args.tile.shape") matches.
     list_params = ConfigLoader._find_list_parameters(W_args_base, prefix="esn.W_args")
     # Strip the prefix back out so paths are relative to W_args
     list_params = {k.removeprefix("esn.W_args."): v for k, v in list_params.items()}
+
+    # Include spectral_radius as a grid search dimension if it's a list
+    if sr_is_list:
+        list_params["_spectral_radius"] = target_sr
 
     if not list_params:
         combos = [{}]
@@ -488,13 +494,20 @@ def analyze_from_config(config_path, *, save_dir=None, show=True, eigvec=False,
     all_stats = []
     for combo in combos:
         W_args = copy.deepcopy(W_args_base)
+        # Extract spectral_radius from combo if it's a grid dimension
+        combo_sr = combo.pop("_spectral_radius", None)
+        if combo_sr is not None:
+            target_sr = combo_sr
         # Set scalar values for this combination
         for param_path, value in combo.items():
             ConfigLoader._set_nested_value(W_args, param_path, value)
 
         # Build label from varying params
-        if combo:
-            label_parts = [f"{k.split('.')[-1]}={v}" for k, v in combo.items()]
+        label_parts = []
+        if combo_sr is not None:
+            label_parts.append(f"spectral_radius={combo_sr}")
+        label_parts += [f"{k.split('.')[-1]}={v}" for k, v in combo.items()]
+        if label_parts:
             label = "_".join(label_parts)
         else:
             label = "default"
@@ -524,31 +537,23 @@ def analyze_from_config(config_path, *, save_dir=None, show=True, eigvec=False,
             if eigvec or eigvec_only:
                 from visualization.eigvec_viz import eigenvector_viz
                 eigvec_path = os.path.join(save_dir, f"eigvec_{safe_label}.html")
-                eigenvector_viz(W_res_np, target_sr=target_sr,
+                eigenvector_viz(W_res_np, target_sr=target_sr if isinstance(target_sr, (int, float)) else None,
                                 save_path=eigvec_path,
                                 title=f"Eigenvector Explorer — {label}")
-        elif isinstance(wtype, str) and wtype.endswith(".json"):
-            if not eigvec_only:
-                save_path = os.path.join(save_dir, f"analysis_{safe_label}.png")
-                stats = analyze_tile(
-                    wtype,
-                    lattice_size=W_args["size"],
-                    save_path=save_path,
-                    show=show,
-                )
-            if eigvec or eigvec_only:
-                from visualization.eigvec_viz import eigenvector_viz_from_tile
-                eigvec_path = os.path.join(save_dir, f"eigvec_{safe_label}.html")
-                eigenvector_viz_from_tile(wtype, lattice_size=W_args["size"],
-                                         target_sr=target_sr,
-                                         save_path=eigvec_path)
         else:
             mat = Matrix(W_args)
             # Apply spectral radius rescaling (same as ESN.__init__)
-            if target_sr is not None:
+            # Resolve "from_tile" by reading the tile's metadata
+            effective_sr = target_sr
+            if effective_sr == "from_tile" and isinstance(wtype, str) and wtype.endswith(".json"):
+                import json as _json
+                with open(wtype) as _f:
+                    _tile_meta = _json.load(_f).get("metadata", {}).get("params", {})
+                effective_sr = _tile_meta.get("esn.spectral_radius")
+            if effective_sr is not None and isinstance(effective_sr, (int, float)):
                 sr_raw = spectral_radius(mat.W_res)
                 if sr_raw > 0:
-                    mat.W_res *= target_sr / sr_raw
+                    mat.W_res *= effective_sr / sr_raw
             W_res_np = mat.W_res.detach().cpu().numpy()
             G_res = getattr(mat, "G_res", None)
 
@@ -569,7 +574,7 @@ def analyze_from_config(config_path, *, save_dir=None, show=True, eigvec=False,
             if eigvec or eigvec_only:
                 from visualization.eigvec_viz import eigenvector_viz
                 eigvec_path = os.path.join(save_dir, f"eigvec_{safe_label}.html")
-                eigenvector_viz(W_res_np, target_sr=target_sr,
+                eigenvector_viz(W_res_np, target_sr=effective_sr if isinstance(effective_sr, (int, float)) else None,
                                 save_path=eigvec_path,
                                 title=f"Eigenvector Explorer — {label}")
 

@@ -209,14 +209,23 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     # --- Resolvent computations -----------------------------------------------
     I = np.eye(n)
     # z=1: (I - W)^{-1}
-    res_inv_z1 = np.linalg.inv(I - W_res)
-    res_z1 = (res_inv_z1 @ np.ones(n)).reshape(m, m).tolist()
+    try:
+        res_inv_z1 = np.linalg.inv(I - W_res)
+        res_z1 = (res_inv_z1 @ np.ones(n)).reshape(m, m).tolist()
+    except np.linalg.LinAlgError:
+        res_inv_z1 = np.full((n, n), np.nan)
+        res_z1 = np.full((m, m), 0.0).tolist()
 
     # z=e^{i*0.1}: complex resolvent
     z2 = np.exp(1j * 0.1)
-    res_z_complex = np.linalg.inv(z2 * I - W_res) @ np.ones(n)
-    res_z_mag = np.abs(res_z_complex).reshape(m, m).tolist()
-    res_z_phase = np.angle(res_z_complex).reshape(m, m).tolist()
+    try:
+        res_z_complex = np.linalg.inv(z2 * I - W_res) @ np.ones(n)
+        res_z_mag = np.abs(res_z_complex).reshape(m, m).tolist()
+        res_z_phase = np.angle(res_z_complex).reshape(m, m).tolist()
+    except np.linalg.LinAlgError:
+        res_z_complex = np.full(n, np.nan + 0j)
+        res_z_mag = np.full((m, m), 0.0).tolist()
+        res_z_phase = np.full((m, m), 0.0).tolist()
 
     # Local phase coherence of resolvent phase
     res_z_local_r = _local_kuramoto(np.angle(res_z_complex)).reshape(m, m).tolist()

@@ -24,6 +24,17 @@ class OffsetTile:
         return [(r, c) for r in range(self.tile_shape[0])
                        for c in range(self.tile_shape[1])]
 
+    def edges(self, data=False):
+        if data:
+            return [
+                (pos, (pos[0] + off[0], pos[1] + off[1]), {"weight": w})
+                for (pos, off), w in self.offset_weights.items()
+            ]
+        return [
+            (pos, (pos[0] + off[0], pos[1] + off[1]))
+            for pos, off in self.offset_weights.keys()
+        ]
+
 
 def euclidean(x, y):
     """
@@ -218,9 +229,13 @@ def _tile_offsets_to_lattice(offset_weights, tile_rows, tile_cols, m, n):
         pos_offsets.setdefault(pos, []).append((offset, weight))
 
     G = nx.DiGraph()
+    # Add all nodes first in row-major order to ensure consistent ordering
     for r in range(m):
         for c in range(n):
             G.add_node((r, c))
+    # Then add edges
+    for r in range(m):
+        for c in range(n):
             t_pos = (r % tile_rows, c % tile_cols)
             for (dr, dc), weight in pos_offsets.get(t_pos, []):
                 tr, tc = r + dr, c + dc
