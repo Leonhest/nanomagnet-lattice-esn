@@ -160,6 +160,14 @@ def run_cmaes(config, dataset, output_dir):
     if "bounds" in cmaes_conf:
         opts["bounds"] = cmaes_conf["bounds"]
 
+    # Covariance mode: "full" (default), "diagonal" (sep-CMA-ES),
+    # or an integer N to use diagonal for the first N iterations then full.
+    cov_mode = cmaes_conf.get("covariance", "full")
+    if cov_mode == "diagonal":
+        opts["CMA_diagonal"] = True
+    elif cov_mode != "full":
+        opts["CMA_diagonal"] = int(cov_mode)
+
     es = cma.CMAEvolutionStrategy(x0, sigma0, opts)
 
     best_nrmse = float("inf")

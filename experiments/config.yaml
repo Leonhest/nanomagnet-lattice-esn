@@ -100,6 +100,9 @@ optimization:
     optimize_signs: true        # Optimize edge sign pattern
     optimize_directions: true   # Optimize edge directionality
     optimize_self_connections: false  # Optimize self-connection weights
+    covariance: full            # "full" (default), "diagonal" (sep-CMA-ES), or integer N
+                                #   (diagonal for first N iters, then full). Use "diagonal"
+                                #   for large tiles (10x10+) where full covariance is too expensive
 
   hyperneat:
     cppn_config_file: ../../cppn_config.txt  # Path to NEAT/CPPN config (relative to experiment)
