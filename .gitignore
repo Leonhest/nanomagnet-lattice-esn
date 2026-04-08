@@ -4,3 +4,4 @@
 **/data/datasets/**
 experiments/run.log
 experiments/test/
+slurm-*.out
