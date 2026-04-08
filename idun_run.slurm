@@ -10,11 +10,8 @@
 #SBATCH --time=1-00:00:00              # 1 day wall time (adjust as needed)
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=20
-#SBATCH --mem=32G
-#SBATCH --constraint=pec6520
+#SBATCH --mem=16G
 #SBATCH --output=slurm-run-%j.out
-#SBATCH --mail-type=END,FAIL
-#SBATCH --mail-user=leon.hesthaug@gmail.com
 
 set -euo pipefail
 
