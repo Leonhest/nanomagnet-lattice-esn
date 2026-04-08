@@ -182,7 +182,7 @@ def _plot_2d_heatmap(param_names, results, exp_path, metric_label, suffix, *, st
     plt.close()
 
 
-def _plot_2d_lines(param_names, results, exp_path, metric_label, suffix, *, max_groups=6, std_map=None):
+def _plot_2d_lines(param_names, results, exp_path, metric_label, suffix, *, max_groups=6, std_map=None, log_scale=False):
     """
     Plot overlaid lines. Uses _select_line_group to pick the line group
     (categorical preferred) vs x-axis. Skips if line group has more than
@@ -229,13 +229,16 @@ def _plot_2d_lines(param_names, results, exp_path, metric_label, suffix, *, max_
 
     plt.xlabel(display_names[x_idx])
     plt.ylabel(metric_label)
+    if log_scale:
+        plt.yscale("log")
     plt.title(f"{metric_label} by {display_names[group_idx]}")
     plt.legend(fontsize="small")
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
 
     param_str = "_vs_".join(display_names)
-    filename = f"{exp_path}/plot_{param_str}{suffix}_lines.png"
+    log_tag = "_log" if log_scale else ""
+    filename = f"{exp_path}/plot_{param_str}{suffix}{log_tag}_lines.png"
     plt.savefig(filename, dpi=300, bbox_inches="tight")
     print(f"Plot saved to {filename}")
     plt.close()
@@ -730,6 +733,12 @@ def plot_gridsearch_results(
         elif num_params == 2:
             _plot_2d_heatmap(param_names, stat_results, exp_path, stat_label, suffix)
             _plot_2d_lines(param_names, stat_results, exp_path, stat_label, suffix)
+
+            # Log-scale line plot when range spans >5x
+            y_vals = np.array([s for _, s in stat_results], dtype=float)
+            y_pos = y_vals[y_vals > 0]
+            if len(y_pos) > 1 and y_pos.max() / y_pos.min() > 5:
+                _plot_2d_lines(param_names, stat_results, exp_path, stat_label, suffix, log_scale=True)
 
             if has_std:
                 _plot_2d_heatmap(param_names, stat_results, exp_path, stat_label,
