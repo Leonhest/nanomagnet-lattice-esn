@@ -4,7 +4,7 @@
 # Any field that is a YAML list becomes a grid-search dimension automatically.
 # ============================================================================
 
-num_runs: 100                    # Repetitions per grid-search combination (fresh random seed each)
+num_runs: 10                   # Repetitions per grid-search combination (fresh random seed each)
 res_metrics: false              # true = reservoir metrics mode (KQ, gen, MC); false = NRMSE mode
 state_plot: false               # true = save reservoir node activation plots
 plot_deciles: false             # true = plot decile bands in results
@@ -19,10 +19,10 @@ data:
   val_ratio: 0.5                # Optional — fraction of train split held out for validation
   # --- Mackey-Glass specific (uncomment when using Mackey-Glass) ---
   # tau: 17                     # Delay parameter
-  # prediction_horizon: 1       # Steps ahead to predict
-  # closed_loop: false          # true = closed-loop free-run evaluation
-  # train_len: 4000             # Optional — explicit train length (overrides split_ratio)
-  # test_len: 2000              # Optional — explicit test length (overrides split_ratio)
+  # prediction_horizon: 84      # Steps ahead to predict
+  # closed_loop: true           # true = closed-loop free-run evaluation
+  # train_len: 3000             # Optional — explicit train length (overrides split_ratio)
+  # test_len: 54200             # Optional — explicit test length (50 trials x 1084 window)
 
 # --- ESN ----------------------------------------------------------------------
 esn:
@@ -33,7 +33,7 @@ esn:
 
   # Activation function
   f:
-    name: tanh                 # "tanh" or "hysteresis" (both use the Hysteresis class)
+    name: hysteresis                 # "tanh" or "hysteresis" (both use the Hysteresis class)
     args:
       beta: 1.0                 # Steepness of tanh
       shift: 0.15                # Horizontal shift: tanh(beta * x - shift)
@@ -59,9 +59,10 @@ esn:
 
     # Reservoir weights
     W_res_args:
-      type: [experiments/v2/orthogonalization/narma10/best_tile_cmaes.json]              # "constant", "random", "tile", "baseline-esn", "orthogonal",
+      type: experiments/v2/tiles/self_connections           # "constant", "random", "tile", "baseline-esn", "orthogonal",
                                 #   or path to a .json tile/matrix file,
                                 #   or path to a directory of .json files (auto-expanded to list)
+      tile_replicas: false      # true = treat directory contents as replicas to average (not grid search)
       neighborhood: 2            # Number of distance shells: 1 = 4 neighbors (Von Neumann), 2 = 8 (Moore),
                                 #   3 = 12, 4 = 20, ... Also accepts "Von_Neumann" (=1) or "Moore" (=2)
       self_connection: 0.0      # Self-loop weight on every node (or "from_tile" to resolve from tile JSON metadata)
@@ -75,7 +76,7 @@ esn:
         method: random           # "random" = random tile weights
 
       # Orthogonal reservoir options
-      alternating_proj: [0, 1, 5, 10, 50]       # Alternating projection iterations on the full W_res (0 = off)
+      alternating_proj: 0       # Alternating projection iterations on the full W_res (0 = off)
       orthogonal_tile: false    # false, "exact" (polar decomposition), or "alternating"
       orthogonal_tile_iters: 50 # Iterations for orthogonal_tile: alternating
 
@@ -86,12 +87,13 @@ esn:
 # --- Optimization (for tile search — only used by optimizer scripts) ----------
 optimization:
   method: cmaes                 # "cmaes" or "hyperneat"
+  num_runs: 1                   # Optimization runs per config (each with seed + run_index)
   num_evals: 1                  # ESN evaluations per candidate (averaged)
   seed: 42                      # Random seed for optimizer
 
   cmaes:
     sigma0: 0.3                 # Initial step size
-    max_generations: 10         # Maximum CMA-ES generations
+    max_generations: 100         # Maximum CMA-ES generations
     pop_size: 20                # Population size
     bounds: [-1, 1]             # Weight bounds [min, max] — NOT a grid-search dimension
     optimize_signs: true        # Optimize edge sign pattern

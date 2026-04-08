@@ -502,6 +502,10 @@ def analyze_from_config(config_path, *, save_dir=None, show=True, eigvec=False,
         for param_path, value in combo.items():
             ConfigLoader._set_nested_value(W_args, param_path, value)
 
+        # Resolve "from_tile" parameters using tile JSON metadata
+        wrapped = {"esn": {"W_args": W_args}}
+        ConfigLoader._resolve_from_tile_params(wrapped)
+
         # Build label from varying params
         label_parts = []
         if combo_sr is not None:
