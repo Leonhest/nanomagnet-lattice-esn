@@ -87,13 +87,13 @@ esn:
 # --- Optimization (for tile search — only used by optimizer scripts) ----------
 optimization:
   method: cmaes                 # "cmaes" or "hyperneat"
-  num_runs: 10                   # Optimization runs per config (each with seed + run_index)
-  num_evals: 3                  # ESN evaluations per candidate (averaged)
+  num_runs: 1                   # Optimization runs per config (each with seed + run_index)
+  num_evals: 1                  # ESN evaluations per candidate (averaged)
   seed: 42                      # Random seed for optimizer
 
   cmaes:
     sigma0: 0.3                 # Initial step size
-    max_generations: 10         # Maximum CMA-ES generations
+    max_generations: 100         # Maximum CMA-ES generations
     pop_size: 20                # Population size
     bounds: [-1, 1]             # Weight bounds [min, max] — NOT a grid-search dimension
     optimize_signs: true        # Optimize edge sign pattern
