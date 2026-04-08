@@ -177,7 +177,7 @@ def _plot_2d_heatmap(param_names, results, exp_path, metric_label, suffix, *, st
 
     param_str = "_vs_".join(display_names)
     filename = f"{exp_path}/plot_{param_str}{suffix}_heatmap.png"
-    plt.savefig(filename, dpi=150)
+    plt.savefig(filename, dpi=300)
     print(f"Plot saved to {filename}")
     plt.close()
 
@@ -236,7 +236,7 @@ def _plot_2d_lines(param_names, results, exp_path, metric_label, suffix, *, max_
 
     param_str = "_vs_".join(display_names)
     filename = f"{exp_path}/plot_{param_str}{suffix}_lines.png"
-    plt.savefig(filename, dpi=150)
+    plt.savefig(filename, dpi=300)
     print(f"Plot saved to {filename}")
     plt.close()
 
@@ -491,7 +491,7 @@ def _plot_2d_kq_gen_heatmap(param_names, kq_results, gen_results, exp_path, *,
     param_str = "_vs_".join(display_names)
     suffix = "_with_std" if (kq_std_map or gen_std_map) else ""
     filename = f"{exp_path}/plot_{param_str}_kq_gen{suffix}_heatmap.png"
-    plt.savefig(filename, dpi=150)
+    plt.savefig(filename, dpi=300)
     print(f"Plot saved to {filename}")
     plt.close()
 
@@ -579,7 +579,7 @@ def _plot_2d_kq_gen_lines(param_names, kq_results, gen_results, exp_path, *,
     param_str = "_vs_".join(display_names)
     suffix = "_with_std" if (kq_std_map or gen_std_map) else ""
     filename = f"{exp_path}/plot_{param_str}_kq_gen{suffix}_lines.png"
-    plt.savefig(filename, dpi=150)
+    plt.savefig(filename, dpi=300)
     print(f"Plot saved to {filename}")
     plt.close()
 

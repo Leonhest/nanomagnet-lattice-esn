@@ -106,7 +106,7 @@ def _plot_convergence(histories, labels, save_path):
     ax.legend(fontsize=7)
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
-    fig.savefig(save_path, dpi=150)
+    fig.savefig(save_path, dpi=300)
     plt.close(fig)
     print(f"Convergence plot saved to {save_path}")
 
