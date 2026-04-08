@@ -72,7 +72,7 @@ esn:
 
       # Tile configuration (used when type: tile)
       tile:
-        shape: [[20,20], [10,10]]          # Tile dimensions [rows, cols] — NOT a grid-search dimension
+        shape: [[1,1], [2,2], [3,3], [5,5]]          # Tile dimensions [rows, cols] — NOT a grid-search dimension
         method: random           # "random" = random tile weights
 
       # Orthogonal reservoir options
