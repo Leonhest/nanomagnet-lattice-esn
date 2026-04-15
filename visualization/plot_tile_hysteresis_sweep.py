@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from activation import Hysteresis
+from activation import ShiftedTanh
 from matrix import Matrix, load_tile_with_metadata
 
 
@@ -156,8 +156,7 @@ def run_sweep_pair(mat, f, input_up, settle, seed):
 
     input_down = input_up[::-1].copy()
     # Reset for sweep down — rebuild same reservoir state
-    f_down = Hysteresis(h_c=f.h_c, m_r=f.m_r, beta=f.beta, shift=f.shift,
-                        decay_rate=f.decay_rate)
+    f_down = ShiftedTanh(beta=f.beta, shift=f.shift)
     states_down = sweep(mat, f_down, input_down, settle)
     states_down = states_down[::-1]
 
@@ -179,11 +178,8 @@ def main():
     parser.add_argument("--sign_frac", type=float, default=0.5)
     parser.add_argument("--dir_frac", type=float, default=0.9)
     parser.add_argument("--dir_weights", type=float, default=0.0)
-    parser.add_argument("--h_c", type=float, default=0.0)
-    parser.add_argument("--m_r", type=float, default=1.0)
     parser.add_argument("--beta", type=float, default=1.0)
     parser.add_argument("--shift", type=float, default=0.15)
-    parser.add_argument("--decay_rate", type=float, default=2.0)
     parser.add_argument("--n_points", type=int, default=200)
     parser.add_argument("--settle", type=int, default=500)
     parser.add_argument("--num_nodes", type=int, default=20)
@@ -213,8 +209,7 @@ def main():
     n_cols = len(rho_values)
     input_up = np.linspace(-1.0, 1.0, args.n_points)
 
-    f_args = dict(h_c=args.h_c, m_r=args.m_r, beta=args.beta,
-                  shift=args.shift, decay_rate=args.decay_rate)
+    f_args = dict(beta=args.beta, shift=args.shift)
 
     fig_nodes, ax_n = plt.subplots(n_rows, n_cols,
                                     figsize=(3.5 * n_cols, 2.5 * n_rows),
@@ -237,7 +232,7 @@ def main():
                     label, args.size, args.neighborhood, args.self_conn,
                     args.sign_frac, args.dir_frac, args.dir_weights, rho)
 
-            f = Hysteresis(**f_args)
+            f = ShiftedTanh(**f_args)
             states_up, states_down = run_sweep_pair(
                 mat, f, input_up, args.settle, args.seed)
 

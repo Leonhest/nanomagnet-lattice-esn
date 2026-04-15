@@ -7,7 +7,7 @@ from itertools import product
 from data.NARMA10 import NARMA10
 from data.mackey_glass import MackeyGlass
 from readout import Ridge
-from activation import Hysteresis
+from activation import ShiftedTanh
 from ESN import ESN
 from matrix import Matrix
 
@@ -352,8 +352,8 @@ class ConfigLoader():
     def _init_f(self):
         name = self.conf["esn"]["f"]["name"]
         match name:
-            case "tanh" | "hysteresis":
-                self.conf["esn"]["f"]["module"] = Hysteresis(**self.conf["esn"]["f"]["args"])
+            case "tanh":
+                self.conf["esn"]["f"]["module"] = ShiftedTanh(**self.conf["esn"]["f"]["args"])
             case _:
                 raise ValueError("F not found")
 

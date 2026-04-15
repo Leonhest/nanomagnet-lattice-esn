@@ -6,7 +6,7 @@ Research code for running Echo State Network (ESN) experiments with lattice-base
 
 - **ESN core**: `ESN.py` — single-input ESN with spectral-radius scaling, Ridge readout, closed-loop evaluation, memory capacity computation.
 - **Reservoir construction**: `matrix.py` — builds `W_in`, `W_res`, and optional `W_back`. Supports lattice graphs (Von Neumann/Moore), tiled weight patterns, directed/signed edges, orthogonal matrices (Haar-random, alternating projections), and loading pre-trained tiles from JSON.
-- **Activation functions**: `activation.py` — `Tanh` (beta, shift, binary) and `Hysteresis` (Preisach-style per-node hysteresis with coercivity and remanence).
+- **Activation functions**: `activation.py` — `ShiftedTanh` (beta, shift, binary): `tanh(beta * x - shift)`.
 - **Datasets**: `data/NARMA10.py` (NARMA order 10/20/30), `data/mackey_glass.py` (Mackey-Glass with configurable tau, prediction horizon, closed-loop mode).
 - **Metrics**: `metric.py` — NRMSE, kernel quality, generalization rank, memory capacity.
 - **Runner**:

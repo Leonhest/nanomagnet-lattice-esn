@@ -17,7 +17,7 @@ Usage:
     python -m visualization.plot_hysteresis_sweep --continuous --self_conn 0 1 3 5
 
     # Common options
-    python -m visualization.plot_hysteresis_sweep --h_c 0.3 --type baseline-esn
+    python -m visualization.plot_hysteresis_sweep --type baseline-esn
     python -m visualization.plot_hysteresis_sweep --save sweep.png --dpi 300
 """
 
@@ -28,12 +28,11 @@ import matplotlib.pyplot as plt
 from math import sqrt
 
 from matrix import Matrix
-from activation import Hysteresis
+from activation import ShiftedTanh
 
 
 def build_reservoir(size, res_type, neighborhood, self_conn, sign_frac,
-                    dir_frac, dir_weights, rho, h_c, m_r, beta, shift,
-                    decay_rate):
+                    dir_frac, dir_weights, rho, beta, shift):
     """Build a reservoir and activation function with the given parameters."""
     W_args = {
         "size": size,
@@ -58,7 +57,7 @@ def build_reservoir(size, res_type, neighborhood, self_conn, sign_frac,
         if spec_rad > 0:
             mat.W_res *= rho / spec_rad
 
-    f = Hysteresis(h_c=h_c, m_r=m_r, beta=beta, shift=shift, decay_rate=decay_rate)
+    f = ShiftedTanh(beta=beta, shift=shift)
     return mat, f
 
 
@@ -156,8 +155,7 @@ def run_steady_state(args):
                     neighborhood=nh, self_conn=sc,
                     sign_frac=args.sign_frac, dir_frac=args.dir_frac,
                     dir_weights=args.dir_weights, rho=rho,
-                    h_c=args.h_c, m_r=args.m_r, beta=args.beta,
-                    shift=args.shift, decay_rate=args.decay_rate,
+                    beta=args.beta, shift=args.shift,
                 )
                 states_up = sweep(mat, f, input_up, args.settle)
 
@@ -168,8 +166,7 @@ def run_steady_state(args):
                     neighborhood=nh, self_conn=sc,
                     sign_frac=args.sign_frac, dir_frac=args.dir_frac,
                     dir_weights=args.dir_weights, rho=rho,
-                    h_c=args.h_c, m_r=args.m_r, beta=args.beta,
-                    shift=args.shift, decay_rate=args.decay_rate,
+                    beta=args.beta, shift=args.shift,
                 )
                 states_down = sweep(mat2, f2, input_down, args.settle)
                 states_down = states_down[::-1]
@@ -190,9 +187,7 @@ def run_steady_state(args):
             print(f"  Completed neighborhood {nh}")
 
     suptitle_base = (
-        f"type={args.type}, "
-        f"h_c={args.h_c}, m_r={args.m_r}, beta={args.beta}, "
-        f"shift={args.shift}, decay={args.decay_rate}"
+        f"type={args.type}, beta={args.beta}, shift={args.shift}"
     )
 
     if multi_nh:
@@ -306,8 +301,7 @@ def run_continuous(args):
                         neighborhood=nh, self_conn=sc,
                         sign_frac=args.sign_frac, dir_frac=args.dir_frac,
                         dir_weights=args.dir_weights, rho=rho,
-                        h_c=args.h_c, m_r=args.m_r, beta=args.beta,
-                        shift=args.shift, decay_rate=args.decay_rate,
+                        beta=args.beta, shift=args.shift,
                     )
 
                     signal, plot_start = make_triangle_wave(
@@ -335,9 +329,7 @@ def run_continuous(args):
             print(f"  Completed neighborhood {nh}")
 
     suptitle_base = (
-        f"type={args.type}, "
-        f"h_c={args.h_c}, m_r={args.m_r}, beta={args.beta}, "
-        f"shift={args.shift}, decay={args.decay_rate}"
+        f"type={args.type}, beta={args.beta}, shift={args.shift}"
     )
 
     if multi_nh:
@@ -388,17 +380,11 @@ def main():
     parser.add_argument("--dir_weights", type=float, default=0.0,
                         help="Weight multiplier for removed direction")
 
-    # Activation / hysteresis
-    parser.add_argument("--h_c", type=float, default=0.0,
-                        help="Coercivity (0 = standard tanh, >0 = hysteresis)")
-    parser.add_argument("--m_r", type=float, default=1.0,
-                        help="Remanence scaling factor")
+    # Activation
     parser.add_argument("--beta", type=float, default=1.0,
                         help="Steepness of tanh")
     parser.add_argument("--shift", type=float, default=0.15,
                         help="Horizontal shift of tanh")
-    parser.add_argument("--decay_rate", type=float, default=2.0,
-                        help="Minor loop merge speed")
 
     # Steady-state mode settings
     parser.add_argument("--n_points", type=int, default=200,

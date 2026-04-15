@@ -33,14 +33,11 @@ esn:
 
   # Activation function
   f:
-    name: tanh                 # "tanh" or "hysteresis" (both use the Hysteresis class)
+    name: tanh
     args:
       beta: 1.0                 # Steepness of tanh
       shift: 0.15                # Horizontal shift: tanh(beta * x - shift)
       binary: false             # true = apply sign() after tanh
-      h_c: 0.0                  # Coercivity — half-width of hysteresis loop (0 = standard tanh)
-      m_r: 1.0                  # Remanence scaling factor (1.0 = standard tanh)
-      decay_rate: 2.0           # Minor loop merge speed (0 = hard branch switch, higher = faster merge)
 
   # Readout layer
   readout:
