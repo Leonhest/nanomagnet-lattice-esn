@@ -437,7 +437,8 @@ def analyze_full_matrix(json_path, *, save_path=None, show=True, dpi=300):
 # ---------------------------------------------------------------------------
 
 def analyze_from_config(config_path, *, save_dir=None, show=True, eigvec=False,
-                        eigvec_only=False):
+                        eigvec_only=False, pseudospectrum=False,
+                        pseudospectrum_grid=40):
     """Analyze reservoir(s) defined in a config.yaml.
 
     Expands grid search lists and produces one analysis per combination.
@@ -543,7 +544,9 @@ def analyze_from_config(config_path, *, save_dir=None, show=True, eigvec=False,
                 eigvec_path = os.path.join(save_dir, f"eigvec_{safe_label}.html")
                 eigenvector_viz(W_res_np, target_sr=target_sr if isinstance(target_sr, (int, float)) else None,
                                 save_path=eigvec_path,
-                                title=f"Eigenvector Explorer — {label}")
+                                title=f"Eigenvector Explorer — {label}",
+                                pseudospectrum=pseudospectrum,
+                                pseudospectrum_grid=pseudospectrum_grid)
         else:
             mat = Matrix(W_args)
             # Apply spectral radius rescaling (same as ESN.__init__)
@@ -580,7 +583,9 @@ def analyze_from_config(config_path, *, save_dir=None, show=True, eigvec=False,
                 eigvec_path = os.path.join(save_dir, f"eigvec_{safe_label}.html")
                 eigenvector_viz(W_res_np, target_sr=effective_sr if isinstance(effective_sr, (int, float)) else None,
                                 save_path=eigvec_path,
-                                title=f"Eigenvector Explorer — {label}")
+                                title=f"Eigenvector Explorer — {label}",
+                                pseudospectrum=pseudospectrum,
+                                pseudospectrum_grid=pseudospectrum_grid)
 
         all_stats.append(stats)
 
@@ -593,7 +598,7 @@ def analyze_from_config(config_path, *, save_dir=None, show=True, eigvec=False,
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python -m visualization.analysis <tile.json or config.yaml> [--size=N] [--sr=X] [--no-show] [--eigvec] [--eigvec-only]")
+        print("Usage: python -m visualization.analysis <tile.json or config.yaml> [--size=N] [--sr=X] [--no-show] [--eigvec] [--eigvec-only] [--pseudospectrum] [--pseudo-grid=N]")
         sys.exit(1)
 
     args = sys.argv[1:]
@@ -601,12 +606,16 @@ if __name__ == "__main__":
     show = "--no-show" not in args
     do_eigvec = "--eigvec" in args
     eigvec_only = "--eigvec-only" in args
+    pseudo = "--pseudospectrum" in args or "--pseudo" in args
 
     size_arg = next((a for a in args if a.startswith("--size=")), None)
     lattice_size = int(size_arg.split("=")[1]) if size_arg else 400
 
     sr_arg = next((a for a in args if a.startswith("--sr=")), None)
     target_sr = float(sr_arg.split("=")[1]) if sr_arg else None
+
+    pseudo_grid_arg = next((a for a in args if a.startswith("--pseudo-grid=")), None)
+    pseudo_grid = int(pseudo_grid_arg.split("=")[1]) if pseudo_grid_arg else 40
 
     if input_path.endswith(".json") and _is_full_matrix_json(input_path):
         W_res_np, fm_meta = load_full_matrix(input_path)
@@ -622,7 +631,9 @@ if __name__ == "__main__":
             stem = os.path.splitext(input_path)[0]
             eigenvector_viz(W_res_np, target_sr=target_sr,
                             save_path=f"{stem}_eigvec.html",
-                            title=f"Eigenvector Explorer — {os.path.basename(input_path)}")
+                            title=f"Eigenvector Explorer — {os.path.basename(input_path)}",
+                            pseudospectrum=pseudo,
+                            pseudospectrum_grid=pseudo_grid)
 
     elif input_path.endswith(".json"):
         if not eigvec_only:
@@ -635,11 +646,15 @@ if __name__ == "__main__":
         if do_eigvec or eigvec_only:
             from visualization.eigvec_viz import eigenvector_viz_from_tile
             eigenvector_viz_from_tile(input_path, lattice_size=lattice_size,
-                                     target_sr=target_sr)
+                                     target_sr=target_sr,
+                                     pseudospectrum=pseudo,
+                                     pseudospectrum_grid=pseudo_grid)
 
     elif input_path.endswith(".yaml") or input_path.endswith(".yml"):
         all_stats = analyze_from_config(input_path, show=show, eigvec=do_eigvec,
-                                        eigvec_only=eigvec_only)
+                                        eigvec_only=eigvec_only,
+                                        pseudospectrum=pseudo,
+                                        pseudospectrum_grid=pseudo_grid)
         print(f"\nGenerated {len(all_stats)} configuration(s).")
 
     else:

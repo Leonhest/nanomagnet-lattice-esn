@@ -5,9 +5,78 @@ import os
 import sys
 
 import numpy as np
-from scipy.linalg import schur
+from scipy.linalg import schur, solve_triangular
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+
+
+def _sigma_min_triangular(T, z, n_iter=8, rng=None):
+    """Smallest singular value of (zI - T) via inverse iteration on M^H M.
+
+    T is upper triangular (Schur form), so each iteration is two triangular
+    solves in O(n^2). Returns σ_min as a float.
+    """
+    n = T.shape[0]
+    M = (z * np.eye(n, dtype=complex)) - T  # still upper triangular
+    if rng is None:
+        rng = np.random.default_rng(0)
+    v = rng.standard_normal(n) + 1j * rng.standard_normal(n)
+    v /= np.linalg.norm(v)
+    for _ in range(n_iter):
+        try:
+            x = solve_triangular(M, v, trans='C', lower=False, check_finite=False)
+            w = solve_triangular(M, x, lower=False, check_finite=False)
+        except np.linalg.LinAlgError:
+            return 0.0
+        nw = np.linalg.norm(w)
+        if not np.isfinite(nw) or nw == 0.0:
+            return 0.0
+        v = w / nw
+    return float(np.linalg.norm(M @ v))
+
+
+def _pseudospectrum_grid(T_schur, *, n_grid=40, padding=0.5, n_iter=8,
+                         force_bounds=(-1.25, 1.25)):
+    """Compute σ_min(zI - W) on a grid, reusing Schur form for speed.
+
+    Returns (xs, ys, sigma_min_grid). The grid is expanded to at least cover
+    [force_bounds]^2 so the Kreiss constant can be estimated just outside
+    the unit circle.
+    """
+    eigvals = np.diag(T_schur)
+    x_min, x_max = eigvals.real.min(), eigvals.real.max()
+    y_min, y_max = eigvals.imag.min(), eigvals.imag.max()
+    span = max(x_max - x_min, y_max - y_min, 1.0)
+    pad = span * padding
+    lo, hi = force_bounds
+    x_lo, x_hi = min(x_min - pad, lo), max(x_max + pad, hi)
+    y_lo, y_hi = min(y_min - pad, lo), max(y_max + pad, hi)
+    xs = np.linspace(x_lo, x_hi, n_grid)
+    ys = np.linspace(y_lo, y_hi, n_grid)
+    rng = np.random.default_rng(0)
+    sigma = np.empty((n_grid, n_grid), dtype=float)
+    for i, y in enumerate(ys):
+        for j, x in enumerate(xs):
+            sigma[i, j] = _sigma_min_triangular(T_schur, x + 1j * y,
+                                                n_iter=n_iter, rng=rng)
+    return xs, ys, sigma
+
+
+def _kreiss_constant(xs, ys, sigma_min_grid):
+    """Estimate K(W) = sup_{|z|>1} (|z|-1) / σ_min(zI - W) from the grid.
+
+    Caravelli eqn 11.17. Returns NaN if no grid point lies outside the unit
+    circle.
+    """
+    X, Y = np.meshgrid(xs, ys)
+    Z_abs = np.hypot(X, Y)
+    mask = Z_abs > 1.0
+    if not mask.any():
+        return float('nan')
+    with np.errstate(divide='ignore', invalid='ignore'):
+        ratio = np.where(mask, (Z_abs - 1.0) / np.maximum(sigma_min_grid, 1e-300),
+                         -np.inf)
+    return float(np.max(ratio))
 
 # Allow running as ``python -m visualization.eigvec_viz`` from project root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -91,7 +160,8 @@ def _compute_quiver_binned(phase_grid, m):
     return bins
 
 
-def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector Explorer"):
+def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector Explorer",
+                    pseudospectrum=False, pseudospectrum_grid=40):
     """Interactive eigenvalue/eigenvector explorer -> standalone HTML.
 
     Parameters
@@ -105,6 +175,12 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         Where to save the HTML. Defaults to ``eigvec_explorer.html`` in cwd.
     title : str
         Page title.
+    pseudospectrum : bool
+        If True, compute and overlay ε-pseudospectrum contours on the spectrum
+        panel, and report the Kreiss constant K(W). Cost scales as O(grid^2 · n^2);
+        for a 400-node matrix, grid=40 takes ~30-60s.
+    pseudospectrum_grid : int
+        Grid resolution per axis for the pseudospectrum.
 
     Returns
     -------
@@ -153,6 +229,17 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
 
     # Conjugate pair mapping: pairs[k] = index of conjugate partner, -1 if real
     conj_pairs = _find_conjugate_pairs(eigvals)
+
+    # Pseudospectrum (reuses Schur form for speed)
+    if pseudospectrum:
+        print(f"Computing {pseudospectrum_grid}x{pseudospectrum_grid} pseudospectrum grid...")
+        ps_xs, ps_ys, ps_sigma = _pseudospectrum_grid(
+            T_schur, n_grid=pseudospectrum_grid)
+        kreiss = _kreiss_constant(ps_xs, ps_ys, ps_sigma)
+        print(f"Kreiss constant K(W) = {kreiss:.4f}")
+    else:
+        ps_xs = ps_ys = ps_sigma = None
+        kreiss = None
 
     # Pre-compute magnitude and phase grids for every eigenvector
     mag_grids = []
@@ -255,28 +342,87 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         "conj_pairs": conj_pairs,
         "save_dir": os.path.dirname(os.path.abspath(save_path or "eigvec_explorer.html")),
         "W_res_original": W_res.tolist(),
+        "ann_offset": 1 if pseudospectrum else 0,
     }
 
     # --- Build Plotly figure --------------------------------------------------
-    # Layout: 5 rows x 4 cols
-    #   Row 1: Spectrum [rowspan=2, colspan=2] | Magnitude     | Local R
-    #   Row 2:                                 | Phase         |
-    #   Row 3: Res(z)@1   | |Res(ze^i)@1|     | angle Res     | Res Local R
-    #   Row 4: diag(Res)   | Rel. Self-Infl   |               |
-    #   Row 5: Resolvent Phase Flow [colspan=2] | Phase Flow [colspan=2]
-    fig = make_subplots(
-        rows=5, cols=4,
-        column_widths=[0.25, 0.25, 0.25, 0.25],
-        row_heights=[0.16, 0.16, 0.16, 0.16, 0.36],
-        specs=[
+    # Default layout (5 rows x 4 cols):
+    #   Row 1: Spectrum [rs=2, cs=2]       | Magnitude | Local R
+    #   Row 2:                             | Phase     |
+    #   Row 3: Res(z)@1 | |Res(ze^i)@1|    | angle Res | Res Local R
+    #   Row 4: diag Res | Rel Self         | SV Spec   | SV Dist
+    #   Row 5: Res Phase Flow [cs=2]  | Phase Flow [cs=2]
+    #
+    # Pseudospectrum layout (6 rows x 4 cols): two spectra occupy equal halves
+    # in rows 1-2; magnitude/local R/phase move into a new row 3 side by side.
+    #   Row 1: Spectrum [rs=2, cs=2]       | Pseudospectrum [rs=2, cs=2]
+    #   Row 2:                             |
+    #   Row 3: Magnitude | Local R | Phase
+    #   Row 4: Res(z)@1  | ...
+    #   Row 5: diag Res  | ...
+    #   Row 6: Res Phase Flow [cs=2]  | Phase Flow [cs=2]
+    if pseudospectrum:
+        ROW_MAG, COL_MAG = 3, 1
+        ROW_LOCALR, COL_LOCALR = 3, 2
+        ROW_PHASE, COL_PHASE = 3, 3
+        ROW_RES, ROW_DIAG, ROW_QUIVER = 4, 5, 6
+        specs = [
+            [{"rowspan": 2, "colspan": 2}, None, {"rowspan": 2, "colspan": 2}, None],
+            [None, None, None, None],
+            [{"type": "heatmap"}, {"type": "heatmap"}, {"type": "heatmap"}, None],
+            [{"type": "heatmap"}, {"type": "heatmap"}, {"type": "heatmap"}, {"type": "heatmap"}],
+            [{"type": "heatmap"}, {"type": "heatmap"}, {"type": "xy"}, {"type": "xy"}],
+            [{"colspan": 2}, None, {"colspan": 2}, None],
+        ]
+        row_heights_ = [0.13, 0.13, 0.15, 0.13, 0.13, 0.33]
+        extra_title = ["Pseudospectrum"]
+        # Colorbar positions for 6-row mode (y computed from row_heights_ above)
+        CB_Y_SPEC = 0.882   # spectrum/pseudospectrum — spans rows 1-2
+        CB_Y_MAG = 0.639    # row 3 (Magnitude)
+        CB_Y_LOCALR = 0.639 # row 3 (Local R)
+        CB_Y_PHASE = 0.639  # row 3 (Phase)
+        CB_Y_RES = 0.475    # row 4 (resolvent)
+        CB_Y_DIAG = 0.317   # row 5 (diag / Rel Self)
+        CB_X_MAG = 0.21     # col 1
+        CB_X_LOCALR = 0.47  # col 2
+        CB_X_PHASE = 0.74   # col 3
+        CB_LEN = 0.07
+        CB_LEN_SPEC = 0.18
+    else:
+        ROW_MAG, COL_MAG = 1, 3
+        ROW_LOCALR, COL_LOCALR = 1, 4
+        ROW_PHASE, COL_PHASE = 2, 3
+        ROW_RES, ROW_DIAG, ROW_QUIVER = 3, 4, 5
+        specs = [
             [{"rowspan": 2, "colspan": 2}, None, {"type": "heatmap"}, {"type": "heatmap"}],
             [None, None, {"type": "heatmap"}, None],
             [{"type": "heatmap"}, {"type": "heatmap"}, {"type": "heatmap"}, {"type": "heatmap"}],
             [{"type": "heatmap"}, {"type": "heatmap"}, {"type": "xy"}, {"type": "xy"}],
             [{"colspan": 2}, None, {"colspan": 2}, None],
-        ],
+        ]
+        row_heights_ = [0.16, 0.16, 0.16, 0.16, 0.36]
+        extra_title = []
+        # Colorbar positions for 5-row mode
+        CB_Y_SPEC = 0.851    # spectrum spans rows 1-2
+        CB_Y_MAG = 0.946     # row 1 (Magnitude, col 3)
+        CB_Y_LOCALR = 0.946  # row 1 (Local R, col 4)
+        CB_Y_PHASE = 0.757   # row 2 (Phase, col 3)
+        CB_Y_RES = 0.568     # row 3
+        CB_Y_DIAG = 0.379    # row 4
+        CB_X_MAG = 0.74      # col 3
+        CB_X_LOCALR = 1.01   # col 4
+        CB_X_PHASE = 0.74    # col 3
+        CB_LEN = 0.10
+        CB_LEN_SPEC = 0.22
+
+    fig = make_subplots(
+        rows=len(specs), cols=4,
+        column_widths=[0.25, 0.25, 0.25, 0.25],
+        row_heights=row_heights_,
+        specs=specs,
         subplot_titles=[
             "Eigenvalue Spectrum",
+            *extra_title,
             f"Magnitude |v| \u2014 \u03bb\u2080 = {eigvals[0].real:.4f}{eigvals[0].imag:+.4f}j",
             "Local Phase Coherence R",
             f"Phase \u2220v \u2014 \u03bb\u2080 = {eigvals[0].real:.4f}{eigvals[0].imag:+.4f}j",
@@ -331,7 +477,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
                 size=7,
                 color=np.abs(eigvals).tolist(),
                 colorscale="Viridis",
-                colorbar=dict(title="|\u03bb|", x=-0.08, len=0.22, y=0.851, thickness=12),
+                colorbar=dict(title="|\u03bb|", x=-0.08, len=CB_LEN_SPEC, y=CB_Y_SPEC, thickness=12),
                 line=dict(width=line_widths, color=line_colors),
             ),
             text=hover_text, hoverinfo="text",
@@ -344,10 +490,10 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     fig.add_trace(
         go.Heatmap(
             z=mag_grids[0], colorscale="Viridis",
-            colorbar=dict(title="|v|", x=0.74, len=0.10, y=0.946, thickness=12),
+            colorbar=dict(title="|v|", x=CB_X_MAG, len=CB_LEN, y=CB_Y_MAG, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>|v|=%{z:.4f}<extra></extra>",
         ),
-        row=1, col=3,
+        row=ROW_MAG, col=COL_MAG,
     )
 
     # Trace 4: Phase heatmap (row=2, col=3)
@@ -368,10 +514,10 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         go.Heatmap(
             z=phase_grids[0], colorscale=phase_colorscale,
             zmin=-np.pi, zmax=np.pi,
-            colorbar=dict(title="\u2220v", x=0.74, len=0.10, y=0.757, thickness=12),
+            colorbar=dict(title="\u2220v", x=CB_X_PHASE, len=CB_LEN, y=CB_Y_PHASE, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>\u2220v=%{z:.4f}<extra></extra>",
         ),
-        row=2, col=3,
+        row=ROW_PHASE, col=COL_PHASE,
     )
 
     # Trace 5: Local Kuramoto R heatmap (row=1, col=4)
@@ -379,10 +525,10 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         go.Heatmap(
             z=local_kuramoto_grids[0], colorscale="Viridis",
             zmin=0, zmax=1,
-            colorbar=dict(title="R", x=1.01, len=0.10, y=0.946, thickness=12),
+            colorbar=dict(title="R", x=CB_X_LOCALR, len=CB_LEN, y=CB_Y_LOCALR, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>R=%{z:.4f}<extra></extra>",
         ),
-        row=1, col=4,
+        row=ROW_LOCALR, col=COL_LOCALR,
     )
 
     # --- Row 3: Resolvent heatmaps (all static) -------------------------------
@@ -391,20 +537,20 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     fig.add_trace(
         go.Heatmap(
             z=res_z1, colorscale="RdBu_r", zmid=0,
-            colorbar=dict(title="val", x=0.21, len=0.10, y=0.568, thickness=12),
+            colorbar=dict(title="val", x=0.21, len=CB_LEN, y=CB_Y_RES, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>val=%{z:.4f}<extra></extra>",
         ),
-        row=3, col=1,
+        row=ROW_RES, col=1,
     )
 
     # Trace 7: |(e^{i*0.5}I - W)^{-1} @ 1|  (row=3, col=2)
     fig.add_trace(
         go.Heatmap(
             z=res_z_mag, colorscale="Viridis",
-            colorbar=dict(title="|val|", x=0.47, len=0.10, y=0.568, thickness=12),
+            colorbar=dict(title="|val|", x=0.47, len=CB_LEN, y=CB_Y_RES, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>|val|=%{z:.4f}<extra></extra>",
         ),
-        row=3, col=2,
+        row=ROW_RES, col=2,
     )
 
     # Trace 8: angle((e^{i*0.5}I - W)^{-1} @ 1)  (row=3, col=3)
@@ -412,10 +558,10 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         go.Heatmap(
             z=res_z_phase, colorscale=phase_colorscale,
             zmin=-np.pi, zmax=np.pi,
-            colorbar=dict(title="\u2220", x=0.74, len=0.10, y=0.568, thickness=12),
+            colorbar=dict(title="\u2220", x=0.74, len=CB_LEN, y=CB_Y_RES, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>\u2220=%{z:.4f}<extra></extra>",
         ),
-        row=3, col=3,
+        row=ROW_RES, col=3,
     )
 
     # Trace 9: Resolvent local phase coherence (row=3, col=4)
@@ -423,20 +569,20 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         go.Heatmap(
             z=res_z_local_r, colorscale="Viridis",
             zmin=0, zmax=1,
-            colorbar=dict(title="R", x=1.01, len=0.10, y=0.568, thickness=12),
+            colorbar=dict(title="R", x=1.01, len=CB_LEN, y=CB_Y_RES, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>R=%{z:.4f}<extra></extra>",
         ),
-        row=3, col=4,
+        row=ROW_RES, col=4,
     )
 
     # Trace 10: diag((I - W)^{-1})  (row=4, col=1)
     fig.add_trace(
         go.Heatmap(
             z=res_diag, colorscale="RdBu_r", zmid=0,
-            colorbar=dict(title="diag", x=0.21, len=0.10, y=0.379, thickness=12),
+            colorbar=dict(title="diag", x=0.21, len=CB_LEN, y=CB_Y_DIAG, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>val=%{z:.4f}<extra></extra>",
         ),
-        row=4, col=1,
+        row=ROW_DIAG, col=1,
     )
 
     # Trace 11: Relative self-influence |R_jj| / Σ_k |R_jk|  (row=4, col=2)
@@ -444,10 +590,10 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         go.Heatmap(
             z=res_rel_self, colorscale="Viridis",
             zmin=0, zmax=1,
-            colorbar=dict(title="rel", x=0.47, len=0.10, y=0.379, thickness=12),
+            colorbar=dict(title="rel", x=0.47, len=CB_LEN, y=CB_Y_DIAG, thickness=12),
             hovertemplate="row=%{y}, col=%{x}<br>rel=%{z:.4f}<extra></extra>",
         ),
-        row=4, col=2,
+        row=ROW_DIAG, col=2,
     )
 
     # Trace 12: Singular value spectrum bar chart (row=4, col=3)
@@ -461,15 +607,15 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
             showlegend=False,
             hovertemplate="\u03c3_%{x} = %{y:.4f}<extra></extra>",
         ),
-        row=4, col=3,
+        row=ROW_DIAG, col=3,
     )
     # Reference line at spectral radius
     fig.add_shape(
         type="line", x0=-0.5, x1=len(sv_sorted) - 0.5, y0=sv_ref, y1=sv_ref,
         line=dict(color="red", dash="dash", width=1.5),
-        row=4, col=3,
+        row=ROW_DIAG, col=3,
     )
-    fig.update_yaxes(title_text="\u03c3", row=4, col=3)
+    fig.update_yaxes(title_text="\u03c3", row=ROW_DIAG, col=3)
 
     # Trace 13: Singular value histogram (row=4, col=4)
     fig.add_trace(
@@ -480,15 +626,15 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
             showlegend=False,
             hovertemplate="\u03c3=%{x:.3f}<br>count=%{y}<extra></extra>",
         ),
-        row=4, col=4,
+        row=ROW_DIAG, col=4,
     )
     # Reference line at spectral radius
     fig.add_shape(
         type="line", x0=sv_ref, x1=sv_ref, y0=0, y1=1, yref="paper",
         line=dict(color="red", dash="dash", width=1.5),
-        row=4, col=4,
+        row=ROW_DIAG, col=4,
     )
-    fig.update_xaxes(title_text="\u03c3", row=4, col=4)
+    fig.update_xaxes(title_text="\u03c3", row=ROW_DIAG, col=4)
 
     # --- Quiver bin colors (HSV color wheel mapped to direction angle) ----------
     import colorsys
@@ -508,7 +654,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
                 mode="lines", line=dict(color=quiver_colors[bi], width=1.5),
                 hoverinfo="skip", showlegend=False,
             ),
-            row=5, col=1,
+            row=ROW_QUIVER, col=1,
         )
 
     # --- Eigenvector phase flow quiver (row=5, col=3, colspan=2) — dynamic ----
@@ -521,25 +667,80 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
                 mode="lines", line=dict(color=quiver_colors[bi], width=1.5),
                 hoverinfo="skip", showlegend=False,
             ),
-            row=5, col=3,
+            row=ROW_QUIVER, col=3,
         )
 
     # Spectrum axis styling
     fig.update_xaxes(title_text="Re(\u03bb)", row=1, col=1)
     fig.update_yaxes(title_text="Im(\u03bb)", scaleanchor="x", scaleratio=1, constrain="domain", row=1, col=1)
 
+    # Pseudospectrum panel (row=1, col=2) — added last so earlier trace indices
+    # stay stable for the JS click handler. log10(sigma_min) levels correspond to
+    # epsilon-pseudospectra; contours hug eigenvalues tightly for normal matrices
+    # and balloon outward for non-normal ones (Caravelli Ch. 11 / Trefethen & Embree 2005).
+    if pseudospectrum:
+        # Unit circle on pseudospectrum panel (row=1, col=3 — the col-3/4 half)
+        fig.add_trace(
+            go.Scatter(
+                x=np.cos(theta).tolist(), y=np.sin(theta).tolist(),
+                mode="lines", line=dict(color="gray", dash="dash", width=1),
+                hoverinfo="skip", showlegend=False,
+            ),
+            row=1, col=3,
+        )
+        # Contour of log10(σ_min(zI - W))
+        log_sigma = np.log10(np.maximum(ps_sigma, 1e-16))
+        fig.add_trace(
+            go.Contour(
+                x=ps_xs.tolist(), y=ps_ys.tolist(), z=log_sigma.tolist(),
+                contours=dict(
+                    coloring="lines",
+                    start=-4, end=1, size=0.5,
+                    showlabels=True,
+                    labelfont=dict(size=9, color="black"),
+                ),
+                line=dict(width=1),
+                colorscale="Viridis",
+                reversescale=True,
+                showscale=False,
+                hovertemplate="z=%{x:.3f}%{y:+.3f}j<br>log10 σ_min=%{z:.2f}<extra></extra>",
+                name="Pseudospectrum", showlegend=False,
+            ),
+            row=1, col=3,
+        )
+        # Eigenvalue dots on top of contours for reference
+        fig.add_trace(
+            go.Scatter(
+                x=eigvals.real.tolist(), y=eigvals.imag.tolist(),
+                mode="markers",
+                marker=dict(size=4, color="black", line=dict(width=0)),
+                hoverinfo="skip", showlegend=False,
+            ),
+            row=1, col=3,
+        )
+        # Axis styling: match main spectrum aspect. x2/y2 refers to the 2nd
+        # (non-None) subplot in row-major order — the pseudospectrum panel.
+        fig.update_xaxes(title_text="Re(z)", row=1, col=3)
+        fig.update_yaxes(title_text="Im(z)", scaleanchor="x2", scaleratio=1,
+                         constrain="domain", row=1, col=3)
+
     # Heatmap axes — reversed y for matrix layout
-    for r, c in [(1, 3), (1, 4), (2, 3), (3, 1), (3, 2), (3, 3), (3, 4), (4, 1), (4, 2)]:
+    heatmap_cells = [
+        (ROW_MAG, COL_MAG), (ROW_LOCALR, COL_LOCALR), (ROW_PHASE, COL_PHASE),
+        (ROW_RES, 1), (ROW_RES, 2), (ROW_RES, 3), (ROW_RES, 4),
+        (ROW_DIAG, 1), (ROW_DIAG, 2),
+    ]
+    for r, c in heatmap_cells:
         fig.update_yaxes(autorange="reversed", row=r, col=c)
 
     # Quiver subplots: fix axis ranges (no scaleanchor — it would bind to spectrum x-axis)
-    for r, c in [(5, 1), (5, 3)]:
+    for r, c in [(ROW_QUIVER, 1), (ROW_QUIVER, 3)]:
         fig.update_xaxes(range=[-0.5, m - 0.5], row=r, col=c)
         fig.update_yaxes(range=[m - 0.5, -0.5], autorange=False, row=r, col=c)
 
     fig.update_layout(
         title=dict(text=title, x=0.5),
-        height=1850,
+        height=2100 if pseudospectrum else 1850,
         margin=dict(l=80, r=30, t=80, b=40),
         showlegend=True,
         legend=dict(x=0.0, y=1.0, yanchor="top", orientation="h"),
@@ -573,6 +774,9 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
     var plot = document.getElementById('eigvec-plot');
     var n = data.eigvals_re.length;
     var m = data.m;
+    // Annotation offset: +1 when the pseudospectrum panel is present, since it
+    // inserts an extra subplot title between the spectrum and the magnitude panel.
+    var AOFF = data.ann_offset || 0;
 
     var phaseCS = [
         [0.0,  'rgb(225,216,226)'],
@@ -864,11 +1068,11 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
         var shortLabel = '\\u03bb' + idx + ' = ' + re + im + 'j';
 
         var annotations = plot.layout.annotations || [];
-        if (annotations.length >= 14) {
-            annotations[1].text = 'Magnitude |v| \\u2014 ' + label;
-            annotations[2].text = 'Local Phase Coherence \\u2014 ' + shortLabel;
-            annotations[3].text = 'Phase \\u2220v \\u2014 ' + shortLabel;
-            annotations[13].text ='Phase Flow \\u2014 ' + shortLabel;
+        if (annotations.length >= 14 + AOFF) {
+            annotations[1 + AOFF].text = 'Magnitude |v| \\u2014 ' + label;
+            annotations[2 + AOFF].text = 'Local Phase Coherence \\u2014 ' + shortLabel;
+            annotations[3 + AOFF].text = 'Phase \\u2220v \\u2014 ' + shortLabel;
+            annotations[13 + AOFF].text ='Phase Flow \\u2014 ' + shortLabel;
             Plotly.relayout(plot, {annotations: annotations});
         }
 
@@ -912,11 +1116,11 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
             }, [2]);
 
             var annotations = plot.layout.annotations || [];
-            if (annotations.length >= 14) {
-                annotations[1].text = 'Total Activity \\u2014 \\u03a3 |\\u03bb\\u1d62|\\u00b7|v\\u1d62|\\u00b2';
-                annotations[2].text = 'Local Phase Coherence (weighted total)';
-                annotations[3].text = '(inactive during Total Activity)';
-                annotations[13].text ='(inactive during Total Activity)';
+            if (annotations.length >= 14 + AOFF) {
+                annotations[1 + AOFF].text = 'Total Activity \\u2014 \\u03a3 |\\u03bb\\u1d62|\\u00b7|v\\u1d62|\\u00b2';
+                annotations[2 + AOFF].text = 'Local Phase Coherence (weighted total)';
+                annotations[3 + AOFF].text = '(inactive during Total Activity)';
+                annotations[13 + AOFF].text ='(inactive during Total Activity)';
                 Plotly.relayout(plot, {annotations: annotations});
             }
         } else {
@@ -956,11 +1160,11 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
             var shortLabel = '\\u03bb' + idx + ' = ' + re + im + 'j';
 
             var annotations = plot.layout.annotations || [];
-            if (annotations.length >= 14) {
-                annotations[1].text = 'Magnitude |v| \\u2014 ' + label;
-                annotations[2].text = 'Local Phase Coherence \\u2014 ' + shortLabel;
-                annotations[3].text = 'Phase \\u2220v \\u2014 ' + shortLabel;
-                annotations[13].text ='Phase Flow \\u2014 ' + shortLabel;
+            if (annotations.length >= 14 + AOFF) {
+                annotations[1 + AOFF].text = 'Magnitude |v| \\u2014 ' + label;
+                annotations[2 + AOFF].text = 'Local Phase Coherence \\u2014 ' + shortLabel;
+                annotations[3 + AOFF].text = 'Phase \\u2220v \\u2014 ' + shortLabel;
+                annotations[13 + AOFF].text ='Phase Flow \\u2014 ' + shortLabel;
                 Plotly.relayout(plot, {annotations: annotations});
             }
         }
@@ -999,7 +1203,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
 <title>{title}</title>
 <style>
   body {{ margin: 20px; font-family: sans-serif; }}
-  #eigvec-plot {{ width: 100%; min-height: 1850px; }}
+  #eigvec-plot {{ width: 100%; min-height: {"2100" if pseudospectrum else "1850"}px; }}
   #info {{ color: #666; margin-bottom: 10px; font-size: 14px; }}
   #activity-btn {{
     padding: 8px 18px; margin-left: 16px; cursor: pointer;
@@ -1048,7 +1252,7 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
 <div id="orth-stats" style="margin-bottom:10px; font-size:13px; color:#444; font-family:monospace;">
   \u2016W\u1d40W \u2212 I\u2016_F = {orth_err:.4f} &nbsp;|&nbsp;
   Condition number = {f'{cond_num:.4f}' if cond_num < 1e6 else f'{cond_num:.2e}'} &nbsp;|&nbsp;
-  \u03c3: mean={np.mean(sing_vals):.4f}, std={np.std(sing_vals):.4f}, min={sing_vals[-1]:.6f}, max={sing_vals[0]:.4f}
+  \u03c3: mean={np.mean(sing_vals):.4f}, std={np.std(sing_vals):.4f}, min={sing_vals[-1]:.6f}, max={sing_vals[0]:.4f}{f' &nbsp;|&nbsp; Kreiss K(W) = {kreiss:.3f}' if kreiss is not None and np.isfinite(kreiss) else ''}
 </div>
 <script type="application/json" id="eigvec-data">
 {json.dumps(eigvec_data)}
@@ -1068,7 +1272,8 @@ def eigenvector_viz(W_res, *, target_sr=None, save_path=None, title="Eigenvector
 
 
 def eigenvector_viz_from_tile(tile_path, *, lattice_size=400, target_sr=None,
-                              save_path=None):
+                              save_path=None, pseudospectrum=False,
+                              pseudospectrum_grid=40):
     """Convenience: tile JSON -> W_res -> eigenvector_viz."""
     import networkx as nx
     from matrix import load_tile_with_metadata, tile_to_lattice
@@ -1092,12 +1297,13 @@ def eigenvector_viz_from_tile(tile_path, *, lattice_size=400, target_sr=None,
 
     title = f"Eigenvector Explorer \u2014 {os.path.basename(tile_path)} ({lattice_size} nodes)"
     return eigenvector_viz(W_res, target_sr=target_sr, save_path=save_path,
-                           title=title)
+                           title=title, pseudospectrum=pseudospectrum,
+                           pseudospectrum_grid=pseudospectrum_grid)
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python -m visualization.eigvec_viz <tile.json> [--size=N] [--sr=X]")
+        print("Usage: python -m visualization.eigvec_viz <tile.json> [--size=N] [--sr=X] [--pseudospectrum] [--pseudo-grid=N]")
         sys.exit(1)
 
     args = sys.argv[1:]
@@ -1112,5 +1318,11 @@ if __name__ == "__main__":
     sr_arg = next((a for a in args if a.startswith("--sr=")), None)
     target_sr = float(sr_arg.split("=")[1]) if sr_arg else None
 
+    pseudo = "--pseudospectrum" in args or "--pseudo" in args
+    pseudo_grid_arg = next((a for a in args if a.startswith("--pseudo-grid=")), None)
+    pseudo_grid = int(pseudo_grid_arg.split("=")[1]) if pseudo_grid_arg else 40
+
     eigenvector_viz_from_tile(json_path, lattice_size=lattice_size,
-                              target_sr=target_sr)
+                              target_sr=target_sr,
+                              pseudospectrum=pseudo,
+                              pseudospectrum_grid=pseudo_grid)
