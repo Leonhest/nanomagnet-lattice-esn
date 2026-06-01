@@ -133,10 +133,16 @@ class ESN(nn.Module):
         self.w_outs = [0]*output_nodes
 
 
+        # The per-delay readouts are trained with ridge regression (Tikhonov
+        # regularization, alpha=1.0). The fixed regularization stabilizes the
+        # ill-conditioned high-delay fits, so the memory-capacity estimate
+        # reflects the reservoir's intrinsic dynamics rather than the numerical
+        # conditioning of an unregularized readout. (An unregularized pseudo-
+        # inverse is erratic for near-degenerate lattices; see thesis Methods.)
         for k in range(1, output_nodes+1):
-            self.w_outs[k-1] = Ridge()
+            self.w_outs[k-1] = Ridge(alpha=1.0)
             self.w_outs[k-1](self.X_train[k:, :], u_train[:-k])
-            
+
 
         self.X_test = self.X[washout_len+train_len:]
 
